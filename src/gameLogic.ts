@@ -1,5 +1,5 @@
 import type { CellState, GameState, Player, Position, GameMode } from './types';
-import { BOARD_SIZE, WIN_LENGTH, SCORE_PER_WIN, MP_PER_WIN, WIN_LEAD, TURN_TIME, GAME_TIME, PLAYER_NAMES } from './constants';
+import { BOARD_SIZE, WIN_LENGTH, SCORE_PER_WIN, MP_PER_WIN, WIN_LEAD, TURN_TIME, GAME_TIME, BREED_RANGE, PLAYER_NAMES } from './constants';
 
 export function createEmptyBoard(): CellState[][] {
   return Array.from({ length: BOARD_SIZE }, () =>
@@ -20,6 +20,7 @@ export function createInitialState(mode: GameMode = 'pvp', aiPlayer: Player | nu
     targetingSkill: null,
     targetingStep: 0,
     targetingFirst: null,
+    eliminatedCount: 0,
     turnTimeRemaining: TURN_TIME,
     gameTimeRemaining: GAME_TIME,
     winner: null,
@@ -38,10 +39,7 @@ export function checkWin(board: CellState[][], row: number, col: number): Positi
   if (player === 'empty') return [];
 
   const directions = [
-    [0, 1],   // horizontal
-    [1, 0],   // vertical
-    [1, 1],   // diagonal ↘
-    [1, -1],  // diagonal ↙
+    [0, 1], [1, 0], [1, 1], [1, -1],
   ];
 
   const results: Position[][] = [];
@@ -50,19 +48,14 @@ export function checkWin(board: CellState[][], row: number, col: number): Positi
     const line: Position[] = [{ row, col }];
 
     for (let i = 1; i < WIN_LENGTH; i++) {
-      const r = row + dr * i;
-      const c = col + dc * i;
-      if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === player) {
-        line.push({ row: r, col: c });
-      } else break;
+      const r = row + dr * i, c = col + dc * i;
+      if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === player) line.push({ row: r, col: c });
+      else break;
     }
-
     for (let i = 1; i < WIN_LENGTH; i++) {
-      const r = row - dr * i;
-      const c = col - dc * i;
-      if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === player) {
-        line.unshift({ row: r, col: c });
-      } else break;
+      const r = row - dr * i, c = col - dc * i;
+      if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === player) line.unshift({ row: r, col: c });
+      else break;
     }
 
     if (line.length >= WIN_LENGTH) {
@@ -77,13 +70,11 @@ export function scanBoardForAllWins(board: CellState[][], player: Player): Posit
   const seen = new Set<string>();
   const allWins: Position[][] = [];
 
-  // Only check positions belonging to the player
   for (let r = 0; r < BOARD_SIZE; r++) {
     for (let c = 0; c < BOARD_SIZE; c++) {
       if (board[r][c] !== player) continue;
       const results = checkWin(board, r, c);
       for (const line of results) {
-        // Deduplicate: sort positions and create a unique key
         const sorted = [...line].sort((a, b) => a.row - b.row || a.col - b.col);
         const key = sorted.map(p => `${p.row},${p.col}`).join('|');
         if (!seen.has(key)) {
@@ -134,16 +125,8 @@ export function chooseScore(state: GameState): GameState {
 
   const players = {
     ...state.players,
-    [player]: {
-      ...state.players[player],
-      score: newScore,
-      skipNextTurn: false,
-    },
-    [opp]: {
-      ...state.players[opp],
-      mp: state.players[opp].mp + oppMPGain,
-      skipNextTurn: false,
-    },
+    [player]: { ...state.players[player], score: newScore },
+    [opp]:   { ...state.players[opp], mp: state.players[opp].mp + oppMPGain },
   };
 
   return {
@@ -171,7 +154,6 @@ export function chooseMP(state: GameState): GameState {
   };
 
   const board = state.board.map(r => [...r]);
-  // deduplicate positions (intersection points appear in multiple lines)
   const seen = new Set<string>();
   for (const line of state.fivePositions) {
     for (const { row, col } of line) {
@@ -193,8 +175,8 @@ export function chooseMP(state: GameState): GameState {
   };
 }
 
-/** Remove one opponent piece (flying_sand). */
-export function removePiece(state: GameState, pos: Position): GameState {
+/** Remove one opponent piece (eliminate skill step). */
+export function eliminatePiece(state: GameState, pos: Position): GameState {
   const board = state.board.map(r => [...r]);
   const removedPlayer = board[pos.row][pos.col] as Player;
   board[pos.row][pos.col] = 'empty';
@@ -212,30 +194,14 @@ export function removePiece(state: GameState, pos: Position): GameState {
     },
     fivePositions: fives,
     phase: fives.length > 0 ? 'five_choice' : 'playing',
-    targetingSkill: null,
+    eliminatedCount: state.eliminatedCount + 1,
     targetingStep: 0,
+    targetingSkill: fives.length > 0 ? null : state.targetingSkill,
     targetingFirst: null,
   };
 }
 
-/** Skip opponent's next turn (pacifying_needle). */
-export function applySkipTurn(state: GameState): GameState {
-  const target = opponentOf(state.currentPlayer);
-  return {
-    ...state,
-    players: {
-      ...state.players,
-      [target]: {
-        ...state.players[target],
-        skipNextTurn: true,
-      },
-    },
-    phase: 'playing',
-    targetingSkill: null,
-  };
-}
-
-/** Swap two pieces on the board (stealing_beams). */
+/** Swap two pieces on the board (swap skill). */
 export function swapPieces(state: GameState, pos1: Position, pos2: Position): GameState {
   const board = state.board.map(r => [...r]);
   const tmp = board[pos1.row][pos1.col];
@@ -254,30 +220,37 @@ export function swapPieces(state: GameState, pos1: Position, pos2: Position): Ga
   };
 }
 
-/** Randomly place 2 of own pieces on empty spots (heavenly_flowers). */
-export function heavenlyFlowers(state: GameState): GameState {
+/** Spawn 2 friendly pieces in 3x3 area around the seed piece (breed skill).
+ *  Returns state unchanged if fewer than 2 empty cells in range. */
+export function breedPieces(state: GameState, seed: Position): GameState {
+  const board = state.board.map(r => [...r]);
+  const player = state.currentPlayer;
+  const half = Math.floor(BREED_RANGE / 2);
   const emptySpots: Position[] = [];
-  for (let r = 0; r < BOARD_SIZE; r++) {
-    for (let c = 0; c < BOARD_SIZE; c++) {
-      if (state.board[r][c] === 'empty') {
+
+  for (let dr = -half; dr <= half; dr++) {
+    for (let dc = -half; dc <= half; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const r = seed.row + dr, c = seed.col + dc;
+      if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] === 'empty') {
         emptySpots.push({ row: r, col: c });
       }
     }
   }
 
-  if (emptySpots.length === 0) {
-    return { ...state, phase: 'playing', targetingSkill: null };
+  if (emptySpots.length < 2) {
+    // Not enough space — skill cancelled, MP already deducted before calling
+    console.warn('[breed] not enough space in 3x3 area');
+    return { ...state, phase: 'playing', targetingSkill: null, targetingStep: 0, targetingFirst: null };
   }
 
-  const board = state.board.map(r => [...r]);
+  // Pick 2 random empty spots in range
   const shuffled = emptySpots.sort(() => Math.random() - 0.5);
-  const count = Math.min(2, shuffled.length);
-  for (let i = 0; i < count; i++) {
-    const { row, col } = shuffled[i];
-    board[row][col] = state.currentPlayer;
+  for (let i = 0; i < 2; i++) {
+    board[shuffled[i].row][shuffled[i].col] = player;
   }
 
-  const fives = scanBoardForAllWins(board, state.currentPlayer);
+  const fives = scanBoardForAllWins(board, player);
 
   return {
     ...state,
@@ -285,6 +258,8 @@ export function heavenlyFlowers(state: GameState): GameState {
     fivePositions: fives,
     phase: fives.length > 0 ? 'five_choice' : 'playing',
     targetingSkill: null,
+    targetingStep: 0,
+    targetingFirst: null,
   };
 }
 
@@ -313,7 +288,7 @@ export function endGameByTime(state: GameState): GameState {
   return { ...state, phase: 'game_over', winner };
 }
 
-/** Tick the global game timer. Returns new state; if time hits 0, ends the game. */
+/** Tick the global game timer. */
 export function tickGameTime(state: GameState): GameState {
   if (state.phase === 'game_over' || state.gameTimeRemaining <= 0) return state;
   const newTime = state.gameTimeRemaining - 1;
@@ -323,24 +298,15 @@ export function tickGameTime(state: GameState): GameState {
   return { ...state, gameTimeRemaining: newTime };
 }
 
-/** Switch to the next player's turn, handling skip logic. Resets turn timer. */
+/** Switch to the next player's turn. Resets turn timer. */
 export function nextTurn(state: GameState): GameState {
-  const next = opponentOf(state.currentPlayer);
-  if (state.players[next].skipNextTurn) {
-    const players = {
-      ...state.players,
-      [next]: { ...state.players[next], skipNextTurn: false },
-    };
-    return {
-      ...state,
-      currentPlayer: state.currentPlayer,
-      players,
-      turnTimeRemaining: TURN_TIME,
-    };
-  }
   return {
     ...state,
-    currentPlayer: next,
+    currentPlayer: opponentOf(state.currentPlayer),
     turnTimeRemaining: TURN_TIME,
+    targetingSkill: null,
+    targetingStep: 0,
+    targetingFirst: null,
+    eliminatedCount: 0,
   };
 }

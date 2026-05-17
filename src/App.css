@@ -38,11 +38,6 @@
   border-color: #e94560;
 }
 
-.player-info.frozen {
-  opacity: 0.5;
-  background: #1a1a2e;
-}
-
 .player-info.black {
   text-align: left;
 }
@@ -58,12 +53,6 @@
 
 .fallen-stat {
   color: #999;
-  font-size: 12px;
-}
-
-.frozen-tag {
-  color: #00d4ff;
-  font-weight: bold;
   font-size: 12px;
 }
 
@@ -108,78 +97,81 @@
 .board-container {
   display: flex;
   justify-content: center;
-  padding: 8px;
+  padding: 12px;
 }
 
 .board {
   display: flex;
   flex-direction: column;
-  background: #dcb35c;
-  border: 3px solid #8b6914;
-  border-radius: 4px;
-  padding: 8px;
+  background: #c8a45c;
+  border: 3px solid #5c3a0a;
+  border-radius: 6px;
+  padding: 12px;
+  box-shadow: 4px 4px 12px rgba(0,0,0,0.4), inset 0 0 0 2px #d4b87a;
 }
 
 .board-row {
   display: flex;
 }
 
+/* Each cell is an intersection point on the grid.
+   Background draws the grid lines, ::before draws star dots, ::after draws hover preview. */
 .cell {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   position: relative;
   cursor: pointer;
   background:
-    linear-gradient(to right, #8b6914 1px, transparent 1px) center/100% 1px no-repeat,
-    linear-gradient(to bottom, #8b6914 1px, transparent 1px) center/1px 100% no-repeat;
-}
-
-/* Grid lines */
-.cell::before {
-  content: '';
-  position: absolute;
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  width: 28px; height: 28px;
-  border-radius: 50%;
-  background: transparent;
+    linear-gradient(#5c3a0a 1px, transparent 1px) center/100% 1px no-repeat,
+    linear-gradient(to right, #5c3a0a 1px, transparent 1px) center/1px 100% no-repeat;
 }
 
 /* Star points */
-.board-row:nth-child(4) .cell:nth-child(4)::after,
-.board-row:nth-child(4) .cell:nth-child(8)::after,
-.board-row:nth-child(4) .cell:nth-child(12)::after,
-.board-row:nth-child(8) .cell:nth-child(4)::after,
-.board-row:nth-child(8) .cell:nth-child(8)::after,
-.board-row:nth-child(8) .cell:nth-child(12)::after,
-.board-row:nth-child(12) .cell:nth-child(4)::after,
-.board-row:nth-child(12) .cell:nth-child(8)::after,
-.board-row:nth-child(12) .cell:nth-child(12)::after {
+.board-row:nth-child(4) .cell:nth-child(4)::before,
+.board-row:nth-child(4) .cell:nth-child(8)::before,
+.board-row:nth-child(4) .cell:nth-child(12)::before,
+.board-row:nth-child(8) .cell:nth-child(4)::before,
+.board-row:nth-child(8) .cell:nth-child(8)::before,
+.board-row:nth-child(8) .cell:nth-child(12)::before,
+.board-row:nth-child(12) .cell:nth-child(4)::before,
+.board-row:nth-child(12) .cell:nth-child(8)::before,
+.board-row:nth-child(12) .cell:nth-child(12)::before {
   content: '';
   position: absolute;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   width: 6px; height: 6px;
   border-radius: 50%;
-  background: #8b6914;
+  background: #3a2200;
   z-index: 1;
 }
 
-.cell.black::before {
-  background: radial-gradient(circle at 35% 35%, #555, #111);
-  box-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+/* Stones (pieces) — child element rendered above grid lines */
+.stone {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
   z-index: 2;
+  pointer-events: none;
 }
 
-.cell.white::before {
-  background: radial-gradient(circle at 35% 35%, #fff, #ccc);
-  box-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-  z-index: 2;
+.cell.black .stone {
+  background: radial-gradient(circle at 38% 35%, #4a4a4a, #1a1a1a 60%, #0a0a0a);
+  box-shadow: 2px 3px 5px rgba(0,0,0,0.55);
 }
 
-.cell.five::before {
+.cell.white .stone {
+  background: radial-gradient(circle at 38% 35%, #fafafa, #e0e0e0 50%, #b0b0b0);
+  box-shadow: 2px 3px 5px rgba(0,0,0,0.35);
+}
+
+/* Five-in-a-row highlight */
+.cell.five .stone {
   outline: 3px solid #ff4444;
-  outline-offset: 1px;
+  outline-offset: 2px;
   animation: pulse 0.5s ease-in-out infinite alternate;
 }
 
@@ -188,22 +180,32 @@
   to { outline-color: #ff8888; }
 }
 
-.cell.targetable::before {
+/* Skill targeting hints */
+.cell.targetable .stone {
   outline: 2px dashed #00ff88;
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
-.cell.target-first::before {
+.cell.target-first .stone {
   outline: 3px solid #00d4ff;
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
-.cell:not(.black):not(.white):hover::before {
-  background: rgba(255,255,255,0.15);
+/* Hover: preview stone on empty cells */
+.cell:not(.black):not(.white):hover::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  z-index: 2;
+  pointer-events: none;
 }
 
-.cell.black:hover::before,
-.cell.white:hover::before {
+.cell.black:hover .stone,
+.cell.white:hover .stone {
   opacity: 0.8;
 }
 

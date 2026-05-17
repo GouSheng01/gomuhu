@@ -7,10 +7,9 @@ import {
   placePiece,
   chooseScore,
   chooseMP,
-  removePiece,
-  applySkipTurn,
+  eliminatePiece,
   swapPieces,
-  heavenlyFlowers,
+  breedPieces,
   deductMP,
   nextTurn,
   tickGameTime,
@@ -24,14 +23,14 @@ export default function App() {
   const turnTimerRef = useRef<number | null>(null);
   const gameTimerRef = useRef<number | null>(null);
   const aiTimeoutRef = useRef<number | null>(null);
+  const aiSafetyRef = useRef<number | null>(null);
 
-  // Start new game with given mode
   const startGame = useCallback((newMode: GameMode) => {
     setMode(newMode);
     setState(createInitialState(newMode, newMode === 'pve' ? 'white' : null));
   }, []);
 
-  // Global timer: ticks every second
+  // Global timer
   useEffect(() => {
     if (state.phase === 'game_over') return;
     gameTimerRef.current = window.setInterval(() => {
@@ -43,7 +42,7 @@ export default function App() {
     return () => { if (gameTimerRef.current) clearInterval(gameTimerRef.current); };
   }, [state.phase]);
 
-  // Turn timer: ticks every second, resets when turn changes
+  // Turn timer
   useEffect(() => {
     if (state.phase === 'game_over') return;
     turnTimerRef.current = window.setInterval(() => {
@@ -51,14 +50,13 @@ export default function App() {
         if (prev.phase === 'game_over') return prev;
         const newTime = prev.turnTimeRemaining - 1;
         if (newTime <= 0) {
-          // Timeout: forfeit turn or auto-choose
           if (prev.phase === 'five_choice') {
             return chooseScore({ ...prev, turnTimeRemaining: TURN_TIME });
           }
           if (prev.phase === 'skill_targeting') {
-            return nextTurn({ ...prev, phase: 'playing', targetingSkill: null, targetingStep: 0, targetingFirst: null, turnTimeRemaining: 0 });
+            return nextTurn(prev);
           }
-          return nextTurn({ ...prev, turnTimeRemaining: 0 });
+          return nextTurn(prev);
         }
         return { ...prev, turnTimeRemaining: newTime };
       });
@@ -69,41 +67,63 @@ export default function App() {
   // AI auto-play
   useEffect(() => {
     if (aiTimeoutRef.current) { clearTimeout(aiTimeoutRef.current); aiTimeoutRef.current = null; }
+    if (aiSafetyRef.current) { clearTimeout(aiSafetyRef.current); aiSafetyRef.current = null; }
     if (state.phase === 'game_over') return;
     if (state.aiPlayer !== state.currentPlayer) return;
 
-    // Delay AI move so it doesn't feel instant
     const delay = state.phase === 'five_choice' ? 600 : state.phase === 'skill_targeting' ? 400 : 300 + Math.random() * 500;
     aiTimeoutRef.current = window.setTimeout(() => {
       setState(prev => {
         if (prev.aiPlayer !== prev.currentPlayer || prev.phase === 'game_over') return prev;
         try {
-          return aiDecide(prev);
+          const result = aiDecide(prev);
+          if (result.currentPlayer === prev.currentPlayer && result.phase === prev.phase && result.phase === 'playing') {
+            console.warn('[AI] returned state with no visible change, forcing next turn');
+            return nextTurn(result);
+          }
+          return result;
         } catch (e) {
-          console.error('AI error, forfeiting turn:', e);
-          return nextTurn({ ...prev, phase: 'playing', targetingSkill: null, targetingStep: 0, targetingFirst: null });
+          console.error('[AI] error, forfeiting turn:', e);
+          return nextTurn(prev);
         }
       });
     }, delay);
 
-    return () => { if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current); };
+    aiSafetyRef.current = window.setTimeout(() => {
+      console.warn('[AI] safety timeout (8s), forcing next turn');
+      setState(prev => {
+        if (prev.aiPlayer !== prev.currentPlayer || prev.phase === 'game_over') return prev;
+        return nextTurn(prev);
+      });
+    }, 8000);
+
+    return () => {
+      if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
+      if (aiSafetyRef.current) clearTimeout(aiSafetyRef.current);
+    };
   }, [state.currentPlayer, state.phase, state.targetingStep, state.aiPlayer]);
 
   const handleCellClick = useCallback((row: number, col: number) => {
     setState(prev => {
       if (prev.phase === 'game_over') return prev;
-      // Don't allow clicks during AI's turn
       if (prev.aiPlayer === prev.currentPlayer) return prev;
 
       if (prev.phase === 'skill_targeting') {
-        if (prev.targetingSkill === 'flying_sand') {
+        // --- Eliminate (2-step: pick 2 enemy pieces) ---
+        if (prev.targetingSkill === 'eliminate') {
           const targetPlayer = opponentOf(prev.currentPlayer);
           if (prev.board[row][col] !== targetPlayer) return prev;
-          let s = deductMP(prev, 2);
-          s = removePiece(s, { row, col });
-          return s.phase === 'five_choice' ? s : nextTurn(s);
+          // Deduct MP only on first pick
+          const s = prev.eliminatedCount === 0 ? deductMP(prev, 4) : prev;
+          const afterElim = eliminatePiece(s, { row, col });
+          // If five formed, show choice; if still need second pick, stay in targeting
+          if (afterElim.phase === 'five_choice') return afterElim;
+          if (afterElim.eliminatedCount >= 2) return nextTurn(afterElim);
+          return afterElim; // stay in targeting for second pick
         }
-        if (prev.targetingSkill === 'stealing_beams') {
+
+        // --- Swap (2-step: pick 2 pieces to swap) ---
+        if (prev.targetingSkill === 'swap') {
           if (prev.board[row][col] === 'empty') return prev;
           if (prev.targetingStep === 0) {
             return { ...prev, targetingStep: 1, targetingFirst: { row, col } };
@@ -112,6 +132,15 @@ export default function App() {
           s = swapPieces(s, prev.targetingFirst!, { row, col });
           return s.phase === 'five_choice' ? s : nextTurn(s);
         }
+
+        // --- Breed (1-step: pick friendly piece, auto-spawn) ---
+        if (prev.targetingSkill === 'breed') {
+          if (prev.board[row][col] !== prev.currentPlayer) return prev;
+          let s = deductMP(prev, 5);
+          s = breedPieces(s, { row, col });
+          return s.phase === 'five_choice' ? s : nextTurn(s);
+        }
+
         return prev;
       }
 
@@ -143,20 +172,12 @@ export default function App() {
       if (prev.players[player].mp < skill.mpCost) return prev;
 
       switch (skillId) {
-        case 'flying_sand':
-          return { ...prev, phase: 'skill_targeting', targetingSkill: 'flying_sand', targetingStep: 0, targetingFirst: null };
-        case 'pacifying_needle': {
-          let s = deductMP(prev, 4);
-          s = applySkipTurn(s);
-          return nextTurn(s);
-        }
-        case 'stealing_beams':
-          return { ...prev, phase: 'skill_targeting', targetingSkill: 'stealing_beams', targetingStep: 0, targetingFirst: null };
-        case 'heavenly_flowers': {
-          let s = deductMP(prev, 5);
-          s = heavenlyFlowers(s);
-          return s.phase === 'five_choice' ? s : nextTurn(s);
-        }
+        case 'eliminate':
+          return { ...prev, phase: 'skill_targeting', targetingSkill: 'eliminate', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
+        case 'swap':
+          return { ...prev, phase: 'skill_targeting', targetingSkill: 'swap', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
+        case 'breed':
+          return { ...prev, phase: 'skill_targeting', targetingSkill: 'breed', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
         default:
           return prev;
       }
@@ -170,6 +191,7 @@ export default function App() {
       targetingSkill: null,
       targetingStep: 0,
       targetingFirst: null,
+      eliminatedCount: 0,
     }));
   }, []);
 
@@ -177,7 +199,7 @@ export default function App() {
     startGame(mode);
   }, [mode, startGame]);
 
-  const { board, currentPlayer, players, phase, fivePositions, targetingSkill, targetingStep, targetingFirst, turnTimeRemaining, gameTimeRemaining, winner } = state;
+  const { board, currentPlayer, players, phase, fivePositions, targetingSkill, targetingStep, targetingFirst, eliminatedCount, turnTimeRemaining, gameTimeRemaining, winner } = state;
   const curPlayer = players[currentPlayer];
   const isAI = state.aiPlayer === currentPlayer;
 
@@ -195,10 +217,22 @@ export default function App() {
 
   const getCellHint = (r: number, c: number): string => {
     if (phase === 'skill_targeting') {
-      if (targetingSkill === 'flying_sand' && board[r][c] === opponentOf(currentPlayer)) return 'targetable';
-      if (targetingSkill === 'stealing_beams' && board[r][c] !== 'empty') return 'targetable';
+      if (targetingSkill === 'eliminate' && board[r][c] === opponentOf(currentPlayer)) return 'targetable';
+      if (targetingSkill === 'swap' && board[r][c] !== 'empty') return 'targetable';
+      if (targetingSkill === 'breed' && board[r][c] === currentPlayer) return 'targetable';
     }
     return '';
+  };
+
+  const getTurnInfo = () => {
+    if (phase === 'game_over') return '游戏结束';
+    if (phase === 'five_choice') return `${PLAYER_NAMES[currentPlayer]} 五连！请选择${isAI ? ' (AI思考中...)' : ''}`;
+    if (phase === 'skill_targeting') {
+      if (targetingSkill === 'eliminate') return `剔除: 点击敌方棋子 (${eliminatedCount}/2)`;
+      if (targetingSkill === 'swap') return `交换: 选第${targetingStep === 0 ? '一' : '二'}颗棋子`;
+      if (targetingSkill === 'breed') return '繁殖: 点击己方棋子作为种子';
+    }
+    return `当前回合: ${PLAYER_NAMES[currentPlayer]}${isAI ? ' (AI思考中...)' : ''}`;
   };
 
   const globalTimeDanger = gameTimeRemaining <= 60;
@@ -212,36 +246,24 @@ export default function App() {
       </div>
 
       <div className="header">
-        <div className={`player-info black ${currentPlayer === 'black' ? 'active' : ''} ${players.black.skipNextTurn ? 'frozen' : ''}`}>
+        <div className={`player-info black ${currentPlayer === 'black' ? 'active' : ''}`}>
           <span className="player-name">{players.black.name}{state.aiPlayer === 'black' ? ' (AI)' : ''}</span>
           <span>积分: {players.black.score}</span>
           <span>MP: {players.black.mp}</span>
           <span className="fallen-stat">弃子: {players.black.fallen}</span>
-          {players.black.skipNextTurn && <span className="frozen-tag">冻结</span>}
         </div>
         <div className="center-info">
           <div className="timer-label">全局剩余</div>
           <div className={`timer global ${globalTimeDanger ? 'danger' : ''}`}>{formatTime(gameTimeRemaining)}</div>
-          <div className="turn-info">
-            {phase === 'game_over'
-              ? '游戏结束'
-              : phase === 'five_choice'
-                ? `${PLAYER_NAMES[currentPlayer]} 五连！请选择${isAI ? ' (AI思考中...)' : ''}`
-                : phase === 'skill_targeting'
-                  ? targetingSkill === 'stealing_beams'
-                    ? `选择棋子交换 (${targetingStep === 0 ? '第一颗' : '第二颗'})`
-                    : '点击敌方棋子移除'
-                  : `当前回合: ${PLAYER_NAMES[currentPlayer]}${isAI ? ' (AI思考中...)' : ''}`}
-          </div>
+          <div className="turn-info">{getTurnInfo()}</div>
           <div className="timer-label mt">回合剩余</div>
           <div className={`timer ${turnTimeRemaining <= 30 ? 'danger' : ''}`}>{formatTime(turnTimeRemaining)}</div>
         </div>
-        <div className={`player-info white ${currentPlayer === 'white' ? 'active' : ''} ${players.white.skipNextTurn ? 'frozen' : ''}`}>
+        <div className={`player-info white ${currentPlayer === 'white' ? 'active' : ''}`}>
           <span className="player-name">{players.white.name}{state.aiPlayer === 'white' ? ' (AI)' : ''}</span>
           <span>积分: {players.white.score}</span>
           <span>MP: {players.white.mp}</span>
           <span className="fallen-stat">弃子: {players.white.fallen}</span>
-          {players.white.skipNextTurn && <span className="frozen-tag">冻结</span>}
         </div>
       </div>
 
@@ -254,7 +276,9 @@ export default function App() {
                   key={c}
                   className={`cell ${cell} ${isFivePos(r, c) ? 'five' : ''} ${isTargetFirst(r, c) ? 'target-first' : ''} ${getCellHint(r, c)}`}
                   onClick={() => handleCellClick(r, c)}
-                />
+                >
+                  {cell !== 'empty' && <div className="stone" />}
+                </div>
               ))}
             </div>
           ))}

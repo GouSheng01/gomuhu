@@ -1,18 +1,20 @@
 import type { GameState, Player, Position, SkillId } from './types';
-import { BOARD_SIZE, WIN_LENGTH, SKILLS } from './constants';
+import { BOARD_SIZE, WIN_LENGTH, SKILLS, BREED_RANGE } from './constants';
 import {
-  placePiece, chooseScore, chooseMP, removePiece, applySkipTurn, swapPieces, heavenlyFlowers, deductMP, nextTurn,
+  placePiece, chooseScore, chooseMP, eliminatePiece, swapPieces, breedPieces, deductMP, nextTurn,
   opponentOf, checkWin,
 } from './gameLogic';
 import type { CellState } from './types';
+
+const DEBUG = true;
+function log(msg: string, data?: unknown) { if (DEBUG) console.log(`[AI] ${msg}`, data ?? ''); }
 
 /** Score an empty cell for the given player: max consecutive length if placed there. */
 function cellScore(board: CellState[][], row: number, col: number, player: Player): number {
   const copy = board.map(r => [...r]);
   copy[row][col] = player;
   const wins = checkWin(copy, row, col);
-  if (wins.length > 0) return WIN_LENGTH + wins.length; // 5 + extra for multi-line
-  // Count max consecutive in each direction
+  if (wins.length > 0) return WIN_LENGTH + wins.length;
   let maxLen = 0;
   const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
   for (const [dr, dc] of dirs) {
@@ -32,13 +34,12 @@ function cellScore(board: CellState[][], row: number, col: number, player: Playe
   return maxLen;
 }
 
-/** Find best move for the given player. Returns null if board full. */
+/** Find best move for the AI player. */
 function findBestMove(board: CellState[][], ai: Player): Position | null {
   const opp = opponentOf(ai);
   let bestPos: Position | null = null;
   let bestScore = -1;
 
-  // Only consider cells near existing pieces (within 2)
   const candidateSet = new Set<string>();
   for (let r = 0; r < BOARD_SIZE; r++) {
     for (let c = 0; c < BOARD_SIZE; c++) {
@@ -55,8 +56,8 @@ function findBestMove(board: CellState[][], ai: Player): Position | null {
     }
   }
 
-  // If board is empty, play center
   if (candidateSet.size === 0) {
+    log('board empty, playing center');
     return { row: 7, col: 7 };
   }
 
@@ -65,17 +66,15 @@ function findBestMove(board: CellState[][], ai: Player): Position | null {
     const aiScore = cellScore(board, r, c, ai);
     const oppScore = cellScore(board, r, c, opp);
 
-    // Winning move = top priority
-    if (aiScore >= WIN_LENGTH) return { row: r, col: c };
-
-    // Block opponent's winning move
+    if (aiScore >= WIN_LENGTH) {
+      log(`winning move at ${r},${c}`);
+      return { row: r, col: c };
+    }
     if (oppScore >= WIN_LENGTH && bestScore < 1000) {
       bestScore = 1000;
       bestPos = { row: r, col: c };
       continue;
     }
-
-    // Score: heavily weight own threats and opponent threats
     const score = Math.pow(aiScore, 3) + Math.pow(oppScore, 2) * 2;
     if (score > bestScore && bestScore < 1000) {
       bestScore = score;
@@ -83,80 +82,56 @@ function findBestMove(board: CellState[][], ai: Player): Position | null {
     }
   }
 
+  if (!bestPos) {
+    for (let r = 0; r < BOARD_SIZE; r++)
+      for (let c = 0; c < BOARD_SIZE; c++)
+        if (board[r][c] === 'empty') return { row: r, col: c };
+  }
   return bestPos;
 }
 
-/** Check if AI should use a skill. Returns skill id or null. */
-function shouldUseSkill(state: GameState, ai: Player): SkillId | null {
-  const mp = state.players[ai].mp;
-  const opp = opponentOf(ai);
-  const board = state.board;
-
-  // Don't use skills too aggressively - 30% base chance
-  if (Math.random() > 0.3) return null;
-
-  const affordable = SKILLS.filter(s => mp >= s.mpCost);
-  if (affordable.length === 0) return null;
-
-  // Count opponent pieces (for evaluating board state)
-  let oppCount = 0;
-  for (let r = 0; r < BOARD_SIZE; r++)
-    for (let c = 0; c < BOARD_SIZE; c++)
-      if (board[r][c] === opp) oppCount++;
-
-  // Check if opponent has a near-win threat (4 in a row anywhere)
-  const oppNearWin = findBestMove(board, opp);
-  const oppThreatLevel = oppNearWin ? cellScore(board, oppNearWin.row, oppNearWin.col, opp) : 0;
-
-  // Priority: if opponent is about to win and we can afford 飞沙走石 to break it
-  if (oppThreatLevel >= 4 && mp >= 2) {
-    return 'flying_sand';
-  }
-
-  // If opponent is threatening and we can freeze them
-  if (oppThreatLevel >= 3 && mp >= 4 && Math.random() < 0.5) {
-    return 'pacifying_needle';
-  }
-
-  // If we have decent MP and board has empty space, consider 天女散花
-  const emptyCount = board.flat().filter(c => c === 'empty').length;
-  if (mp >= 5 && emptyCount > 50 && Math.random() < 0.3) {
-    return 'heavenly_flowers';
-  }
-
-  // Swap pieces occasionally if MP is high
-  if (mp >= 5 && oppCount > 5 && Math.random() < 0.2) {
-    return 'stealing_beams';
-  }
-
-  // Default: 飞沙走石 to harass
-  if (mp >= 2 && oppCount > 3 && Math.random() < 0.25) {
-    return 'flying_sand';
-  }
-
-  return null;
-}
-
-/** Find a good opponent piece to remove with 飞沙走石. */
-function findTargetPiece(board: CellState[][], opp: Player): Position | null {
-  // Prefer removing pieces that are part of long chains
+/** Pick best opponent piece to remove (highest cellScore = most threatening). */
+function findTopOppPiece(board: CellState[][], opp: Player): Position | null {
   let best: Position | null = null;
   let bestScore = -1;
   for (let r = 0; r < BOARD_SIZE; r++) {
     for (let c = 0; c < BOARD_SIZE; c++) {
       if (board[r][c] === opp) {
         const score = cellScore(board, r, c, opp);
-        if (score > bestScore) {
-          bestScore = score;
-          best = { row: r, col: c };
-        }
+        if (score > bestScore) { bestScore = score; best = { row: r, col: c }; }
       }
     }
   }
   return best;
 }
 
-/** Find two pieces to swap for stealing_beams. Simple: swap AI's worst-positioned piece with opponent's best. */
+/** Find a friendly piece with at least 2 empty cells in its 3x3 range. */
+function findBreedSeed(board: CellState[][], ai: Player): Position | null {
+  const half = Math.floor(BREED_RANGE / 2);
+  const candidates: { pos: Position; empty: number }[] = [];
+
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r][c] !== ai) continue;
+      let empty = 0;
+      for (let dr = -half; dr <= half; dr++) {
+        for (let dc = -half; dc <= half; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const nr = r + dr, nc = c + dc;
+          if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === 'empty') empty++;
+        }
+      }
+      if (empty >= 2) candidates.push({ pos: { row: r, col: c }, empty });
+    }
+  }
+
+  if (candidates.length === 0) return null;
+  // Prefer pieces with more empty space around them
+  candidates.sort((a, b) => b.empty - a.empty);
+  return candidates[0].pos;
+}
+
+/** Find swap positions: AI's worst piece swapped with opponent's best. */
 function findSwapPositions(board: CellState[][], ai: Player): { pos1: Position; pos2: Position } | null {
   const opp = opponentOf(ai);
   let bestOpp: Position | null = null, bestOppScore = -1;
@@ -177,7 +152,58 @@ function findSwapPositions(board: CellState[][], ai: Player): { pos1: Position; 
   return null;
 }
 
-/** Choose between score and MP when five-in-a-row. */
+/** Decide whether to use a skill. */
+function shouldUseSkill(state: GameState, ai: Player): SkillId | null {
+  const mp = state.players[ai].mp;
+  const opp = opponentOf(ai);
+  const board = state.board;
+
+  if (Math.random() > 0.25) return null;
+
+  let oppCount = 0;
+  for (let r = 0; r < BOARD_SIZE; r++)
+    for (let c = 0; c < BOARD_SIZE; c++)
+      if (board[r][c] === opp) oppCount++;
+
+  // 剔除: break opponent near-win (4-in-a-row)
+  if (mp >= 4 && oppCount >= 4) {
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (board[r][c] === 'empty') {
+          if (cellScore(board, r, c, opp) >= 4) {
+            log('using eliminate to break opponent threat');
+            return 'eliminate';
+          }
+        }
+      }
+    }
+  }
+
+  // 交换: reposition key pieces
+  if (mp >= 5 && oppCount >= 4 && Math.random() < 0.4) {
+    log('using swap');
+    return 'swap';
+  }
+
+  // 繁殖: expand own presence (need a seed with room)
+  if (mp >= 5) {
+    const seed = findBreedSeed(board, ai);
+    if (seed && Math.random() < 0.4) {
+      log(`using breed at seed ${seed.row},${seed.col}`);
+      return 'breed';
+    }
+  }
+
+  // 剔除: aggressive removal
+  if (mp >= 5 && oppCount > 5 && Math.random() < 0.3) {
+    log('using eliminate aggressively');
+    return 'eliminate';
+  }
+
+  return null;
+}
+
+/** AI five-in-a-row decision. */
 function aiFiveChoice(state: GameState): GameState {
   const ai = state.currentPlayer;
   const opp = opponentOf(ai);
@@ -187,96 +213,129 @@ function aiFiveChoice(state: GameState): GameState {
   const timeLeft = state.gameTimeRemaining;
   const newScore = aiScore + multiplier;
 
-  // If choosing score wins outright, always do it
   if (newScore - oppScore >= WIN_LENGTH) {
+    log('five_choice: SCORE (win outright)');
     return chooseScore(state);
   }
-
-  // If this gets us to 2 points with decent lead, strongly consider it
   if (newScore >= 2 && newScore > oppScore && timeLeft < 420) {
-    if (Math.random() < 0.7) return chooseScore(state);
+    if (Math.random() < 0.7) { log('five_choice: SCORE (close to winning)'); return chooseScore(state); }
   }
-
-  // Behind on score and time is running out → grab points
   if (aiScore < oppScore && timeLeft < 300) {
+    log('five_choice: SCORE (behind, time pressure)');
     return chooseScore(state);
   }
-
-  // Time pressure: last 2 minutes, prefer score
   if (timeLeft < 120) {
-    return Math.random() < 0.85 ? chooseScore(state) : chooseMP(state);
+    const pick = Math.random() < 0.85 ? 'score' : 'mp';
+    log(`five_choice: time low, ${pick}`);
+    return pick === 'score' ? chooseScore(state) : chooseMP(state);
   }
-
-  // Mid-game (3-7 min remaining): 50/50
   if (timeLeft < 420) {
-    return Math.random() < 0.5 ? chooseScore(state) : chooseMP(state);
+    const pick = Math.random() < 0.5 ? 'score' : 'mp';
+    log(`five_choice: mid-game, ${pick}`);
+    return pick === 'score' ? chooseScore(state) : chooseMP(state);
   }
-
-  // Early game: mostly MP but sometimes score to keep it interesting
-  return Math.random() < 0.35 ? chooseScore(state) : chooseMP(state);
+  const pick = Math.random() < 0.35 ? 'score' : 'mp';
+  log(`five_choice: early, ${pick}`);
+  return pick === 'score' ? chooseScore(state) : chooseMP(state);
 }
 
-/** Main AI entry point. Applies the AI's decision to the state and returns new state. */
+/** Main AI entry point. */
 export function aiDecide(state: GameState): GameState {
   const ai = state.currentPlayer;
+  log(`turn: ${ai}, phase: ${state.phase}, mp: ${state.players[ai].mp}`);
 
   if (state.phase === 'five_choice') {
+    log('resolving five_choice');
     return aiFiveChoice(state);
   }
 
   if (state.phase === 'skill_targeting') {
-    // Complete ongoing targeting
-    if (state.targetingSkill === 'flying_sand') {
-      const target = findTargetPiece(state.board, opponentOf(ai));
+    const opp = opponentOf(ai);
+    log(`resolving targeting: ${state.targetingSkill}, step ${state.targetingStep}`);
+
+    // --- Eliminate (2-step targeting) ---
+    if (state.targetingSkill === 'eliminate') {
+      // Deduct MP on first pick
+      const s = state.eliminatedCount === 0 ? deductMP(state, 4) : state;
+      const target = findTopOppPiece(s.board, opp);
       if (target) {
-        let s = deductMP(state, 2);
-        s = removePiece(s, target);
-        return s.phase === 'five_choice' ? s : nextTurn(s);
+        log(`eliminate target ${state.eliminatedCount + 1}/2: ${target.row},${target.col}`);
+        const afterElim = eliminatePiece(s, target);
+        if (afterElim.phase === 'five_choice') return afterElim;
+        if (afterElim.eliminatedCount >= 2) return nextTurn(afterElim);
+        return afterElim; // stay in targeting for second pick
       }
+      log('eliminate: no target found, cancelling');
+      return nextTurn(s);
     }
-    if (state.targetingSkill === 'stealing_beams') {
+
+    // --- Swap (2-step targeting) ---
+    if (state.targetingSkill === 'swap') {
       if (state.targetingStep === 0) {
-        // Pick first piece: prefer opponent piece
-        const target = findTargetPiece(state.board, opponentOf(ai));
-        if (target) return { ...state, targetingStep: 1, targetingFirst: target };
+        const target = findTopOppPiece(state.board, opp);
+        if (target) {
+          log(`swap first pick: ${target.row},${target.col}`);
+          return { ...state, targetingStep: 1, targetingFirst: target };
+        }
       } else {
         const swap = findSwapPositions(state.board, ai);
         if (swap) {
+          log(`swap: (${swap.pos1.row},${swap.pos1.col}) <-> (${swap.pos2.row},${swap.pos2.col})`);
           let s = deductMP(state, 3);
           s = swapPieces(s, swap.pos1, swap.pos2);
           return s.phase === 'five_choice' ? s : nextTurn(s);
         }
       }
+      log('swap: fallback, cancelling');
+      return nextTurn(state);
     }
-    // Fallback: cancel skill
-    return nextTurn({ ...state, phase: 'playing', targetingSkill: null, targetingStep: 0, targetingFirst: null });
+
+    // --- Breed (1-step targeting: pick seed, auto-spawn) ---
+    if (state.targetingSkill === 'breed') {
+      const seed = findBreedSeed(state.board, ai);
+      if (seed) {
+        log(`breed seed: ${seed.row},${seed.col}`);
+        let s = deductMP(state, 5);
+        s = breedPieces(s, seed);
+        return s.phase === 'five_choice' ? s : nextTurn(s);
+      }
+      log('breed: no valid seed found, cancelling');
+      return nextTurn(state);
+    }
+
+    log('targeting fallback');
+    return nextTurn(state);
   }
 
   // Decide: skill or place piece
   const skillChoice = shouldUseSkill(state, ai);
 
-  if (skillChoice === 'pacifying_needle') {
-    let s = deductMP(state, 4);
-    s = applySkipTurn(s);
-    return nextTurn(s);
+  if (skillChoice === 'breed') {
+    return { ...state, phase: 'skill_targeting', targetingSkill: 'breed', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
   }
-  if (skillChoice === 'heavenly_flowers') {
-    let s = deductMP(state, 5);
-    s = heavenlyFlowers(s);
-    return s.phase === 'five_choice' ? s : nextTurn(s);
+  if (skillChoice === 'swap') {
+    return { ...state, phase: 'skill_targeting', targetingSkill: 'swap', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
   }
-  if (skillChoice === 'flying_sand') {
-    return { ...state, phase: 'skill_targeting', targetingSkill: 'flying_sand', targetingStep: 0, targetingFirst: null };
-  }
-  if (skillChoice === 'stealing_beams') {
-    return { ...state, phase: 'skill_targeting', targetingSkill: 'stealing_beams', targetingStep: 0, targetingFirst: null };
+  if (skillChoice === 'eliminate') {
+    return { ...state, phase: 'skill_targeting', targetingSkill: 'eliminate', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
   }
 
   // Place a piece
+  const t0 = performance.now();
   const move = findBestMove(state.board, ai);
-  if (!move) return nextTurn(state); // board full, forfeit turn
+  const t1 = performance.now();
+  log(`findBestMove took ${(t1 - t0).toFixed(1)}ms`);
 
+  if (!move) {
+    log('no move available, forfeiting turn');
+    return nextTurn(state);
+  }
+
+  log(`placing piece at ${move.row},${move.col}`);
   const { state: newState, wins } = placePiece(state, move.row, move.col);
+  if (wins.length > 0) {
+    log(`formed ${wins.length} five-in-a-row(s)!`);
+  }
   if (wins.length === 0) {
     return nextTurn(newState);
   }

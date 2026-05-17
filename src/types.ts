@@ -14,7 +14,7 @@ export interface PlayerState {
   fallen: number;
 }
 
-export type SkillId = 'flying_sand' | 'pacifying_needle' | 'stealing_beams' | 'heavenly_flowers';
+export type SkillId = 'eliminate' | 'swap' | 'breed';
 
 export interface SkillDef {
   id: SkillId;
@@ -38,8 +38,9 @@ export interface GameState {
   phase: GamePhase;
   fivePositions: Position[][];       // all 5-in-a-rows (usually 1, can be 2-4)
   targetingSkill: SkillId | null;    // which skill is waiting for target selection
-  targetingStep: number;             // for multi-step targeting (stealing_beams)
-  targetingFirst: Position | null;   // first selected position for swap
+  targetingStep: number;             // 0=first pick, 1=second pick (eliminate / swap)
+  targetingFirst: Position | null;   // first selected position (swap) or seed piece (breed)
+  eliminatedCount: number;           // how many pieces eliminated so far (eliminate)
   turnTimeRemaining: number;         // seconds remaining for current turn
   gameTimeRemaining: number;         // seconds remaining for whole game (10 min)
   winner: Player | null;
