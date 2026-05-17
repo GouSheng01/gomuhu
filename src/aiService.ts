@@ -75,7 +75,9 @@ function findBestMove(board: CellState[][], ai: Player): Position | null {
       bestPos = { row: r, col: c };
       continue;
     }
-    const score = Math.pow(aiScore, 3) + Math.pow(oppScore, 2) * 2;
+    // Base score with ±15% jitter so AI varies between similarly-scored moves
+    const base = Math.pow(aiScore, 3) + Math.pow(oppScore, 2) * 2;
+    const score = base * (0.85 + Math.random() * 0.3);
     if (score > bestScore && bestScore < 1000) {
       bestScore = score;
       bestPos = { row: r, col: c };
@@ -158,46 +160,62 @@ function shouldUseSkill(state: GameState, ai: Player): SkillId | null {
   const opp = opponentOf(ai);
   const board = state.board;
 
-  if (Math.random() > 0.25) return null;
+  // Higher base chance to use skills overall
+  if (Math.random() > 0.35) return null;
 
   let oppCount = 0;
-  for (let r = 0; r < BOARD_SIZE; r++)
-    for (let c = 0; c < BOARD_SIZE; c++)
+  let aiCount = 0;
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
       if (board[r][c] === opp) oppCount++;
-
-  // 剔除: break opponent near-win (4-in-a-row)
-  if (mp >= 4 && oppCount >= 4) {
-    for (let r = 0; r < BOARD_SIZE; r++) {
-      for (let c = 0; c < BOARD_SIZE; c++) {
-        if (board[r][c] === 'empty') {
-          if (cellScore(board, r, c, opp) >= 4) {
-            log('using eliminate to break opponent threat');
-            return 'eliminate';
-          }
-        }
-      }
+      else if (board[r][c] === ai) aiCount++;
     }
   }
 
-  // 交换: reposition key pieces
-  if (mp >= 5 && oppCount >= 4 && Math.random() < 0.4) {
-    log('using swap');
-    return 'swap';
+  // Check if opponent has a near-win (4-in-a-row) anywhere
+  let oppHasNearWin = false;
+  if (mp >= 4 && oppCount >= 4) {
+    for (let r = 0; r < BOARD_SIZE; r++) {
+      for (let c = 0; c < BOARD_SIZE; c++) {
+        if (board[r][c] === 'empty' && cellScore(board, r, c, opp) >= 4) {
+          oppHasNearWin = true; break;
+        }
+      }
+      if (oppHasNearWin) break;
+    }
   }
 
-  // 繁殖: expand own presence (need a seed with room)
-  if (mp >= 5) {
+  // === Priority 1: 交换 (3MP) — cheapest, most versatile ===
+  // Use proactively when MP is moderate and board has pieces to work with
+  if (mp >= 3 && oppCount >= 3 && aiCount >= 3) {
+    if (Math.random() < 0.5) { log('using swap'); return 'swap'; }
+  }
+
+  // === Priority 2: 剔除 (4MP) — break opponent near-win ===
+  if (oppHasNearWin) {
+    log('using eliminate to break opponent threat');
+    return 'eliminate';
+  }
+
+  // === Priority 3: 繁殖 (5MP) — expand when safe ===
+  if (mp >= 5 && !oppHasNearWin) {
     const seed = findBreedSeed(board, ai);
-    if (seed && Math.random() < 0.4) {
+    if (seed && Math.random() < 0.5) {
       log(`using breed at seed ${seed.row},${seed.col}`);
       return 'breed';
     }
   }
 
-  // 剔除: aggressive removal
-  if (mp >= 5 && oppCount > 5 && Math.random() < 0.3) {
+  // === Priority 4: 剔除 (4MP) — aggressive removal when MP is plentiful ===
+  if (mp >= 5 && oppCount > 4 && Math.random() < 0.4) {
     log('using eliminate aggressively');
     return 'eliminate';
+  }
+
+  // === Fallback: 交换 as cheap option when nothing else fires ===
+  if (mp >= 3 && oppCount >= 2 && aiCount >= 2 && Math.random() < 0.4) {
+    log('using swap as fallback');
+    return 'swap';
   }
 
   return null;
