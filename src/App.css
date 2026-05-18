@@ -475,3 +475,147 @@
   opacity: 0.7;
   pointer-events: none;
 }
+
+/* ===== Mobile responsive ===== */
+@media (max-width: 600px) {
+  .top-bar {
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 4px 6px;
+  }
+  .mode-btn {
+    font-size: 11px;
+    padding: 4px 10px;
+  }
+  .mode-btn.restart {
+    margin-left: 4px;
+  }
+  .room-badge {
+    width: 100%;
+    text-align: center;
+    margin-left: 0;
+    font-size: 11px;
+  }
+
+  /* Header: stack vertically */
+  .header {
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 8px;
+  }
+  .player-info {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 4px 10px;
+    font-size: 12px;
+    min-width: unset;
+    justify-content: center;
+  }
+  .player-name {
+    font-size: 13px;
+  }
+  .fallen-stat {
+    font-size: 11px;
+  }
+  .center-info {
+    order: -1;
+    gap: 1px;
+  }
+  .timer.global {
+    font-size: 18px;
+  }
+  .timer {
+    font-size: 20px;
+  }
+  .turn-info {
+    font-size: 11px;
+  }
+  .timer-label {
+    font-size: 10px;
+  }
+
+  /* Board: fit screen width */
+  .board-container {
+    padding: 4px;
+  }
+  .board {
+    padding: 6px;
+  }
+  .cell {
+    width: calc((100vw - 36px) / 15);
+    height: calc((100vw - 36px) / 15);
+  }
+  .stone {
+    width: calc((100vw - 36px) / 15 * 0.82);
+    height: calc((100vw - 36px) / 15 * 0.82);
+  }
+
+  /* Star points on mobile */
+  .cell.five .stone {
+    outline-offset: 1px;
+  }
+  .cell.targetable .stone {
+    outline-offset: 1px;
+  }
+  .cell.target-first .stone {
+    outline-offset: 1px;
+  }
+
+  /* Skills bar */
+  .skills-bar {
+    gap: 4px;
+    padding: 6px 8px;
+  }
+  .skills-label {
+    font-size: 12px;
+    width: 100%;
+    text-align: center;
+    margin-right: 0;
+  }
+  .skill-btn {
+    font-size: 11px;
+    padding: 5px 10px;
+  }
+
+  /* Modals */
+  .modal {
+    min-width: unset;
+    max-width: 92vw;
+    padding: 20px;
+  }
+  .modal h2 {
+    font-size: 18px;
+  }
+  .modal p {
+    font-size: 13px;
+  }
+  .modal-buttons {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .modal-btn {
+    font-size: 13px;
+    padding: 10px 16px;
+  }
+
+  /* Online lobby */
+  .online-lobby {
+    margin-top: 30px;
+    gap: 14px;
+    padding: 0 16px;
+  }
+  .online-lobby h2 {
+    font-size: 18px;
+  }
+  .online-section {
+    flex-direction: column;
+    width: 100%;
+  }
+  .join-input {
+    width: 100%;
+  }
+  .online-divider {
+    font-size: 12px;
+  }
+}
