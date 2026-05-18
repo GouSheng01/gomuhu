@@ -29,7 +29,19 @@ export type GamePhase =
   | 'skill_targeting'   // skill requires selecting target(s) on board
   | 'game_over';        // time's up or win condition met
 
-export type GameMode = 'pvp' | 'pve';
+export type GameMode = 'pvp' | 'pve' | 'online';
+
+export type OnlinePhase = 'idle' | 'connecting' | 'connected' | 'disconnected';
+
+/** Actions sent over the network between peers */
+export type PeerAction =
+  | { type: 'place'; row: number; col: number }
+  | { type: 'skill_eliminate'; targets: [Position, Position] }
+  | { type: 'skill_swap'; pos1: Position; pos2: Position }
+  | { type: 'skill_breed'; seed: Position; spawns: [Position, Position] }
+  | { type: 'choose_score' }
+  | { type: 'choose_mp' }
+  | { type: 'cancel_skill' };
 
 export interface GameState {
   board: CellState[][];            // 15x15

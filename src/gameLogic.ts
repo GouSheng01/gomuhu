@@ -221,8 +221,13 @@ export function swapPieces(state: GameState, pos1: Position, pos2: Position): Ga
 }
 
 /** Spawn 2 friendly pieces in 3x3 area around the seed piece (breed skill).
- *  Returns state unchanged if fewer than 2 empty cells in range. */
-export function breedPieces(state: GameState, seed: Position): GameState {
+ *  If forcedSpawns is provided, uses those exact positions (for network sync).
+ *  Returns state and the actual spawn positions used. */
+export function breedPieces(
+  state: GameState,
+  seed: Position,
+  forcedSpawns?: [Position, Position]
+): { state: GameState; spawns: [Position, Position] | null } {
   const board = state.board.map(r => [...r]);
   const player = state.currentPlayer;
   const half = Math.floor(BREED_RANGE / 2);
@@ -239,27 +244,35 @@ export function breedPieces(state: GameState, seed: Position): GameState {
   }
 
   if (emptySpots.length < 2) {
-    // Not enough space — skill cancelled, MP already deducted before calling
     console.warn('[breed] not enough space in 3x3 area');
-    return { ...state, phase: 'playing', targetingSkill: null, targetingStep: 0, targetingFirst: null };
+    return { state: { ...state, phase: 'playing', targetingSkill: null, targetingStep: 0, targetingFirst: null }, spawns: null };
   }
 
-  // Pick 2 random empty spots in range
-  const shuffled = emptySpots.sort(() => Math.random() - 0.5);
-  for (let i = 0; i < 2; i++) {
-    board[shuffled[i].row][shuffled[i].col] = player;
+  // Use forced spawn positions (from network sync) or pick 2 random
+  let spawns: [Position, Position];
+  if (forcedSpawns) {
+    spawns = forcedSpawns;
+  } else {
+    const shuffled = emptySpots.sort(() => Math.random() - 0.5);
+    spawns = [{ row: shuffled[0].row, col: shuffled[0].col }, { row: shuffled[1].row, col: shuffled[1].col }];
   }
+
+  board[spawns[0].row][spawns[0].col] = player;
+  board[spawns[1].row][spawns[1].col] = player;
 
   const fives = scanBoardForAllWins(board, player);
 
   return {
-    ...state,
-    board,
-    fivePositions: fives,
-    phase: fives.length > 0 ? 'five_choice' : 'playing',
-    targetingSkill: null,
-    targetingStep: 0,
-    targetingFirst: null,
+    state: {
+      ...state,
+      board,
+      fivePositions: fives,
+      phase: fives.length > 0 ? 'five_choice' : 'playing',
+      targetingSkill: null,
+      targetingStep: 0,
+      targetingFirst: null,
+    },
+    spawns,
   };
 }
 

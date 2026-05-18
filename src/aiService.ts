@@ -1,5 +1,5 @@
 import type { GameState, Player, Position, SkillId } from './types';
-import { BOARD_SIZE, WIN_LENGTH, SKILLS, BREED_RANGE } from './constants';
+import { BOARD_SIZE, WIN_LENGTH, BREED_RANGE } from './constants';
 import {
   placePiece, chooseScore, chooseMP, eliminatePiece, swapPieces, breedPieces, deductMP, nextTurn,
   opponentOf, checkWin,
@@ -314,8 +314,8 @@ export function aiDecide(state: GameState): GameState {
       if (seed) {
         log(`breed seed: ${seed.row},${seed.col}`);
         let s = deductMP(state, 5);
-        s = breedPieces(s, seed);
-        return s.phase === 'five_choice' ? s : nextTurn(s);
+        const r = breedPieces(s, seed);
+        return r.state.phase === 'five_choice' ? r.state : nextTurn(r.state);
       }
       log('breed: no valid seed found, cancelling');
       return nextTurn(state);
