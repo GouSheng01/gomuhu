@@ -7,6 +7,7 @@ import {
 } from './gameLogic';
 import { aiDecide } from './aiService';
 import { createRoom, joinRoom, sendAction, onRemoteAction, onStatusChange, disconnect } from './peerService';
+import { flameCanvas } from './flameEffect';
 import './App.css';
 
 function isMyTurn(state: { currentPlayer: Player; aiPlayer: Player | null; mode: GameMode; phase: string }, myColor: Player | null): boolean {
@@ -21,6 +22,7 @@ export default function App() {
   const gameTimerRef = useRef<number | null>(null);
   const aiTimeoutRef = useRef<number | null>(null);
   const aiSafetyRef = useRef<number | null>(null);
+  const testModeRef = useRef(false);
 
   // Online state
   const [onlinePhase, setOnlinePhase] = useState<OnlinePhase>('idle');
@@ -29,6 +31,40 @@ export default function App() {
   const [myColor, setMyColor] = useState<Player | null>(null);
   const [onlineError, setOnlineError] = useState('');
   const sendRef = useRef<PeerAction | null>(null);
+  const boardRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const elimQueueRef = useRef<{ row: number; col: number }[]>([]);
+
+  // Attach and sync flame canvas whenever board is present
+  useEffect(() => {
+    if (!canvasRef.current || !boardRef.current) return;
+    flameCanvas.attach(canvasRef.current);
+    flameCanvas.syncSize(boardRef.current);
+  });
+
+  useEffect(() => {
+    const sync = () => {
+      if (boardRef.current) flameCanvas.syncSize(boardRef.current);
+    };
+    window.addEventListener('resize', sync);
+    return () => window.removeEventListener('resize', sync);
+  }, []);
+
+  // Flush elimination positions → flame effects
+  useEffect(() => {
+    const q = elimQueueRef.current;
+    if (q.length === 0 || !boardRef.current) return;
+    elimQueueRef.current = [];
+    const rect = boardRef.current.getBoundingClientRect();
+    const cs = getComputedStyle(boardRef.current);
+    const pad = parseFloat(cs.paddingLeft) || 12;
+    const cellSize = (rect.width - pad * 2) / 15;
+    for (const pos of q) {
+      const cx = pad + pos.col * cellSize + cellSize / 2;
+      const cy = pad + pos.row * cellSize + cellSize / 2;
+      flameCanvas.emit(cx, cy);
+    }
+  });
 
   function applyRemoteAction(state: ReturnType<typeof createInitialState>, action: PeerAction): ReturnType<typeof createInitialState> {
     switch (action.type) {
@@ -38,21 +74,23 @@ export default function App() {
         return ns;
       }
       case 'skill_eliminate': {
-        let s = deductMP(state, 4);
+        let s = testModeRef.current ? state : deductMP(state, 4);
+        elimQueueRef.current.push(action.targets[0]);
         s = eliminatePiece(s, action.targets[0]);
         if (s.phase === 'five_choice') return s;
+        elimQueueRef.current.push(action.targets[1]);
         s = eliminatePiece(s, action.targets[1]);
         if (s.phase === 'five_choice') return s;
         return nextTurn(s);
       }
       case 'skill_swap': {
-        let s = deductMP(state, 3);
+        let s = testModeRef.current ? state : deductMP(state, 3);
         s = swapPieces(s, action.pos1, action.pos2);
         if (s.phase === 'five_choice') return s;
         return nextTurn(s);
       }
       case 'skill_breed': {
-        let s = deductMP(state, 5);
+        let s = testModeRef.current ? state : deductMP(state, 5);
         const r = breedPieces(s, action.seed, action.spawns);
         if (r.state.phase === 'five_choice') return r.state;
         return nextTurn(r.state);
@@ -222,7 +260,8 @@ export default function App() {
           if (prev.board[row][col] !== targetPlayer) return prev;
           const isFirst = prev.eliminatedCount === 0;
           const firstTarget = isFirst ? { row, col } : prev.targetingFirst;
-          const s = isFirst ? deductMP(prev, 4) : prev;
+          const s = isFirst && !testModeRef.current ? deductMP(prev, 4) : prev;
+          elimQueueRef.current.push({ row, col });
           let afterElim = eliminatePiece(s, { row, col });
           // Preserve first target position (eliminatePiece clears it)
           afterElim = { ...afterElim, targetingFirst: firstTarget };
@@ -244,7 +283,7 @@ export default function App() {
           if (prev.targetingStep === 0) {
             return { ...prev, targetingStep: 1, targetingFirst: { row, col } };
           }
-          let s = deductMP(prev, 3);
+          let s = testModeRef.current ? prev : deductMP(prev, 3);
           s = swapPieces(s, prev.targetingFirst!, { row, col });
           if (prev.mode === 'online') {
             sendRef.current = { type: 'skill_swap', pos1: prev.targetingFirst!, pos2: { row, col } };
@@ -255,7 +294,7 @@ export default function App() {
         // --- Breed ---
         if (prev.targetingSkill === 'breed') {
           if (prev.board[row][col] !== prev.currentPlayer) return prev;
-          let s = deductMP(prev, 5);
+          let s = testModeRef.current ? prev : deductMP(prev, 5);
           const r = breedPieces(s, { row, col });
           if (prev.mode === 'online' && r.spawns) {
             sendRef.current = { type: 'skill_breed', seed: { row, col }, spawns: r.spawns };
@@ -301,7 +340,7 @@ export default function App() {
       if (prev.aiPlayer === prev.currentPlayer) return prev;
       const player = prev.currentPlayer;
       const skill = SKILLS.find(s => s.id === skillId)!;
-      if (prev.players[player].mp < skill.mpCost) return prev;
+      if (!testModeRef.current && prev.players[player].mp < skill.mpCost) return prev;
 
       switch (skillId) {
         case 'eliminate':
@@ -411,6 +450,11 @@ export default function App() {
         <button className={`mode-btn ${mode === 'pve' ? 'active' : ''}`} onClick={() => startGame('pve')}>人机对战</button>
         <button className={`mode-btn ${mode === 'online' ? 'active' : ''}`} onClick={() => startGame('online')}>联机对战</button>
         <button className="mode-btn restart" onClick={handleRestart}>重新开始</button>
+        <button
+          className="mode-btn test-mode"
+          onClick={() => { testModeRef.current = !testModeRef.current; setState(prev => ({ ...prev })); }}
+          style={{ background: testModeRef.current ? '#FFD600' : undefined, color: testModeRef.current ? '#1a1a1a' : undefined }}
+        >无限MP</button>
         {mode === 'online' && <span className="room-badge">房间: {roomId}</span>}
       </div>
 
@@ -437,7 +481,8 @@ export default function App() {
       </div>
 
       <div className="board-container">
-        <div className={`board ${boardDisabled ? 'disabled' : ''}`}>
+        <div className={`board ${boardDisabled ? 'disabled' : ''}`} ref={boardRef}>
+          <canvas ref={canvasRef} className="flame-canvas" />
           {board.map((row, r) => (
             <div key={r} className="board-row">
               {row.map((cell, c) => (
@@ -457,7 +502,7 @@ export default function App() {
       <div className="skills-bar">
         <span className="skills-label">{curPlayer.name} 技能</span>
         {SKILLS.map(skill => {
-          const canAfford = curPlayer.mp >= skill.mpCost;
+          const canAfford = testModeRef.current || curPlayer.mp >= skill.mpCost;
           const canUse = phase === 'playing' && canAfford && localTurn && !isAI;
           return (
             <div

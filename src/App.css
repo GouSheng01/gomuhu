@@ -160,6 +160,13 @@
   position: relative;
 }
 
+.flame-canvas {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
 .board.disabled {
   opacity: 0.6;
   pointer-events: none;
