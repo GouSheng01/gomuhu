@@ -197,7 +197,7 @@ function shouldUseSkill(state: GameState, ai: Player): SkillId | null {
 
   // Check if opponent has a near-win (4-in-a-row) anywhere
   let oppHasNearWin = false;
-  if (mp >= 4 && oppCount >= 4) {
+  if (mp >= 2 && oppCount >= 4) {
     for (let r = 0; r < BOARD_SIZE; r++) {
       for (let c = 0; c < BOARD_SIZE; c++) {
         if (board[r][c] === 'empty' && cellScore(board, r, c, opp) >= 4) {
@@ -229,8 +229,8 @@ function shouldUseSkill(state: GameState, ai: Player): SkillId | null {
     }
   }
 
-  // === Priority 4: 剔除 (4MP) — aggressive removal when MP is plentiful ===
-  if (mp >= 5 && oppCount > 4 && Math.random() < 0.4) {
+  // === Priority 4: 剔除 (2MP) — aggressive removal
+  if (mp >= 3 && oppCount > 4 && Math.random() < 0.4) {
     log('using eliminate aggressively');
     return 'eliminate';
   }
@@ -310,7 +310,7 @@ export function aiDecide(state: GameState): GameState {
     // --- Eliminate (2-step targeting) ---
     if (state.targetingSkill === 'eliminate') {
       // Deduct MP on first pick
-      const s = state.eliminatedCount === 0 ? deductMP(state, 4) : state;
+      const s = state.eliminatedCount === 0 ? deductMP(state, 2) : state;
       const target = findTopOppPiece(s.board, opp);
       if (target) {
         log(`eliminate target ${state.eliminatedCount + 1}/2: ${target.row},${target.col}`);

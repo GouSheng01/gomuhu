@@ -21,6 +21,7 @@ export function createInitialState(mode: GameMode = 'pvp', aiPlayer: Player | nu
     targetingStep: 0,
     targetingFirst: null,
     eliminatedCount: 0,
+    turnCount: 0,
     turnTimeRemaining: TURN_TIME,
     gameTimeRemaining: GAME_TIME,
     winner: null,
@@ -389,13 +390,20 @@ export function tickGameTime(state: GameState): GameState {
 
 /** Switch to the next player's turn. Resets turn timer. */
 export function nextTurn(state: GameState): GameState {
+  const newCount = state.turnCount + 1;
+  const bonus = newCount % 5 === 0 ? 1 : 0;
   return {
     ...state,
     currentPlayer: opponentOf(state.currentPlayer),
+    turnCount: newCount,
     turnTimeRemaining: TURN_TIME,
     targetingSkill: null,
     targetingStep: 0,
     targetingFirst: null,
     eliminatedCount: 0,
+    players: bonus > 0 ? {
+      black: { ...state.players.black, mp: state.players.black.mp + bonus },
+      white: { ...state.players.white, mp: state.players.white.mp + bonus },
+    } : state.players,
   };
 }

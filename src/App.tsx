@@ -38,6 +38,8 @@ export default function App() {
   const breedQueueRef = useRef<{ seedRow: number; seedCol: number; spawns: { row: number; col: number }[]; player: Player }[]>([]);
   const [breedPopupCells, setBreedPopupCells] = useState<Set<string>>(new Set());
   const [emberFlash, setEmberFlash] = useState<Player | null>(null);
+  const [mpFlashKey, setMpFlashKey] = useState(0);
+  const prevMpRef = useRef({ black: 0, white: 0 });
   const [bombHover, setBombHover] = useState<{ row: number; col: number } | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -69,6 +71,17 @@ export default function App() {
       cy: border + pad + row * cellSize + cellSize / 2,
     };
   }
+
+  // Flash MP when it increases
+  useEffect(() => {
+    const prev = prevMpRef.current;
+    const curB = state.players.black.mp;
+    const curW = state.players.white.mp;
+    if (curB > prev.black || curW > prev.white) {
+      prevMpRef.current = { black: curB, white: curW };
+      setMpFlashKey(k => k + 1);
+    }
+  }, [state.players.black.mp, state.players.white.mp]);
 
   // Flush elimination positions → explosion effects
   useEffect(() => {
@@ -124,7 +137,7 @@ export default function App() {
         return ns;
       }
       case 'skill_eliminate': {
-        let s = testModeRef.current ? state : deductMP(state, 4);
+        let s = testModeRef.current ? state : deductMP(state, 2);
         const targetPlayer = opponentOf(state.currentPlayer);
         elimQueueRef.current.push({ ...action.targets[0], player: targetPlayer });
         s = eliminatePiece(s, action.targets[0]);
@@ -358,7 +371,7 @@ export default function App() {
           if (prev.board[row][col] !== targetPlayer) return prev;
           const isFirst = prev.eliminatedCount === 0;
           const firstTarget = isFirst ? { row, col } : prev.targetingFirst;
-          const s = isFirst && !testModeRef.current ? deductMP(prev, 4) : prev;
+          const s = isFirst && !testModeRef.current ? deductMP(prev, 2) : prev;
           elimQueueRef.current.push({ row, col, player: targetPlayer });
           let afterElim = eliminatePiece(s, { row, col });
           // Preserve first target position (eliminatePiece clears it)
@@ -594,7 +607,7 @@ export default function App() {
         <div className={`player-info black ${currentPlayer === 'black' ? 'active' : ''} ${emberFlash === 'black' ? 'ember-flash' : ''}`}>
           <span className="player-name">{players.black.name}{state.aiPlayer === 'black' ? ' (AI)' : myColor === 'black' ? ' (你)' : mode === 'online' ? ' (对手)' : ''}</span>
           <span>积分: {players.black.score}</span>
-          <span>MP: {players.black.mp}</span>
+          <span key={`b-${mpFlashKey}`} className={mpFlashKey > 0 ? 'mp-bonus-flash' : ''}>MP: {players.black.mp}</span>
           <span className="fallen-stat">弃子: {players.black.fallen}</span>
         </div>
         <div className="center-info">
@@ -607,7 +620,7 @@ export default function App() {
         <div className={`player-info white ${currentPlayer === 'white' ? 'active' : ''} ${emberFlash === 'white' ? 'ember-flash' : ''}`}>
           <span className="player-name">{players.white.name}{state.aiPlayer === 'white' ? ' (AI)' : myColor === 'white' ? ' (你)' : mode === 'online' ? ' (对手)' : ''}</span>
           <span>积分: {players.white.score}</span>
-          <span>MP: {players.white.mp}</span>
+          <span key={`w-${mpFlashKey}`} className={mpFlashKey > 0 ? 'mp-bonus-flash' : ''}>MP: {players.white.mp}</span>
           <span className="fallen-stat">弃子: {players.white.fallen}</span>
         </div>
       </div>

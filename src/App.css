@@ -152,6 +152,15 @@
   color: #555;
 }
 
+.mp-bonus-flash {
+  animation: mpGoldPulse 0.5s ease-in-out;
+}
+
+@keyframes mpGoldPulse {
+  0%, 100% { text-shadow: 0 0 0 rgba(253, 216, 53, 0); }
+  50%      { color: #FDD835; text-shadow: 0 0 10px rgba(253, 216, 53, 0.8), 0 0 20px rgba(253, 216, 53, 0.4); }
+}
+
 /* ===== Board ===== */
 .board-container {
   display: flex;
@@ -379,32 +388,32 @@
 }
 
 /* Hand-of-cards tilt — each card slightly rotated like fanning a hand */
+.skill-card.ember {
+  background-color: #7B1FA2;
+  transform: rotate(-3.5deg) translateY(2px);
+}
+
 .skill-card.eliminate {
   background-color: #E53935;
-  transform: rotate(-3.5deg) translateY(2px);
+  transform: rotate(2deg) translateY(0px);
+  z-index: 2;
 }
 
 .skill-card.swap {
   background-color: #1E88E5;
-  transform: rotate(1.5deg) translateY(0px);
-  z-index: 2;
-}
-
-.skill-card.breed {
-  background-color: #43A047;
   transform: rotate(-1.5deg) translateY(3px);
   z-index: 3;
 }
 
 .skill-card.bombard {
   background-color: #FF6D00;
-  transform: rotate(2.5deg) translateY(2px);
+  transform: rotate(1.5deg) translateY(1px);
   z-index: 4;
 }
 
-.skill-card.ember {
-  background-color: #7B1FA2;
-  transform: rotate(-3deg) translateY(1px);
+.skill-card.breed {
+  background-color: #43A047;
+  transform: rotate(-2.5deg) translateY(2px);
   z-index: 5;
 }
 

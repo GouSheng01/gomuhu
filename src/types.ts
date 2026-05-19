@@ -55,6 +55,7 @@ export interface GameState {
   targetingStep: number;             // 0=first pick, 1=second pick (eliminate / swap)
   targetingFirst: Position | null;   // first selected position (swap) or seed piece (breed)
   eliminatedCount: number;           // how many pieces eliminated so far (eliminate)
+  turnCount: number;                 // total completed turns
   turnTimeRemaining: number;         // seconds remaining for current turn
   gameTimeRemaining: number;         // seconds remaining for whole game (10 min)
   winner: Player | null;
