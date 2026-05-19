@@ -14,45 +14,6 @@ function isMyTurn(state: { currentPlayer: Player; aiPlayer: Player | null; mode:
   return state.currentPlayer === myColor && state.phase !== 'game_over';
 }
 
-/** Apply a remote peer's action to local state. */
-function applyRemoteAction(state: ReturnType<typeof createInitialState>, action: PeerAction): ReturnType<typeof createInitialState> {
-  switch (action.type) {
-    case 'place': {
-      const { state: ns, wins } = placePiece(state, action.row, action.col);
-      if (wins.length === 0) return nextTurn(ns);
-      return ns;
-    }
-    case 'skill_eliminate': {
-      let s = deductMP(state, 4);
-      s = eliminatePiece(s, action.targets[0]);
-      if (s.phase === 'five_choice') return s;
-      s = eliminatePiece(s, action.targets[1]);
-      if (s.phase === 'five_choice') return s;
-      return nextTurn(s);
-    }
-    case 'skill_swap': {
-      let s = deductMP(state, 3);
-      s = swapPieces(s, action.pos1, action.pos2);
-      if (s.phase === 'five_choice') return s;
-      return nextTurn(s);
-    }
-    case 'skill_breed': {
-      let s = deductMP(state, 5);
-      const r = breedPieces(s, action.seed, action.spawns);
-      if (r.state.phase === 'five_choice') return r.state;
-      return nextTurn(r.state);
-    }
-    case 'choose_score':
-      return chooseScore(state);
-    case 'choose_mp':
-      return chooseMP(state);
-    case 'cancel_skill':
-      return { ...state, phase: 'playing', targetingSkill: null, targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
-    default:
-      return state;
-  }
-}
-
 export default function App() {
   const [mode, setMode] = useState<GameMode>('pvp');
   const [state, setState] = useState(() => createInitialState('pvp', null));
@@ -68,6 +29,44 @@ export default function App() {
   const [myColor, setMyColor] = useState<Player | null>(null);
   const [onlineError, setOnlineError] = useState('');
   const sendRef = useRef<PeerAction | null>(null);
+
+  function applyRemoteAction(state: ReturnType<typeof createInitialState>, action: PeerAction): ReturnType<typeof createInitialState> {
+    switch (action.type) {
+      case 'place': {
+        const { state: ns, wins } = placePiece(state, action.row, action.col);
+        if (wins.length === 0) return nextTurn(ns);
+        return ns;
+      }
+      case 'skill_eliminate': {
+        let s = deductMP(state, 4);
+        s = eliminatePiece(s, action.targets[0]);
+        if (s.phase === 'five_choice') return s;
+        s = eliminatePiece(s, action.targets[1]);
+        if (s.phase === 'five_choice') return s;
+        return nextTurn(s);
+      }
+      case 'skill_swap': {
+        let s = deductMP(state, 3);
+        s = swapPieces(s, action.pos1, action.pos2);
+        if (s.phase === 'five_choice') return s;
+        return nextTurn(s);
+      }
+      case 'skill_breed': {
+        let s = deductMP(state, 5);
+        const r = breedPieces(s, action.seed, action.spawns);
+        if (r.state.phase === 'five_choice') return r.state;
+        return nextTurn(r.state);
+      }
+      case 'choose_score':
+        return chooseScore(state);
+      case 'choose_mp':
+        return chooseMP(state);
+      case 'cancel_skill':
+        return { ...state, phase: 'playing', targetingSkill: null, targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
+      default:
+        return state;
+    }
+  }
 
   // Send queued action after state updates
   useEffect(() => {
@@ -456,18 +455,36 @@ export default function App() {
       </div>
 
       <div className="skills-bar">
-        <span className="skills-label">{curPlayer.name} 技能:</span>
+        <span className="skills-label">{curPlayer.name} 技能</span>
         {SKILLS.map(skill => {
           const canAfford = curPlayer.mp >= skill.mpCost;
           const canUse = phase === 'playing' && canAfford && localTurn && !isAI;
           return (
-            <button key={skill.id} className={`skill-btn ${skill.id} ${!canUse ? 'disabled' : ''}`} disabled={!canUse} onClick={() => handleSkillClick(skill.id)} title={skill.description}>
-              {skill.name} ({skill.mpCost}MP)
-            </button>
+            <div
+              key={skill.id}
+              className={`skill-card ${skill.id} ${!canUse ? 'disabled' : ''}`}
+              onClick={() => canUse && handleSkillClick(skill.id)}
+              role="button"
+              tabIndex={canUse ? 0 : -1}
+              onKeyDown={e => { if (canUse && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleSkillClick(skill.id); } }}
+            >
+              <span className="skill-card-corner top-left">{skill.mpCost}<small>MP</small></span>
+              <span className="skill-card-name">{skill.name}</span>
+              <span className="skill-card-corner bottom-right">{skill.mpCost}<small>MP</small></span>
+              <span className="skill-card-desc">{skill.description}</span>
+            </div>
           );
         })}
         {phase === 'skill_targeting' && localTurn && !isAI && (
-          <button className="skill-btn cancel" onClick={handleCancelSkill}>取消</button>
+          <div
+            className="skill-card cancel"
+            onClick={handleCancelSkill}
+            role="button"
+            tabIndex={0}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleCancelSkill(); } }}
+          >
+            <span className="skill-card-name">取消</span>
+          </div>
         )}
       </div>
 

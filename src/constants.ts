@@ -9,7 +9,7 @@ export const SCORE_PER_WIN = 1;
 export const MP_PER_WIN = 3;
 
 export const SKILLS: SkillDef[] = [
-  { id: 'eliminate', name: '剔除', description: '使两枚场上的对方棋子消失',           mpCost: 4 },
+  { id: 'eliminate', name: '剔除', description: '剔除场上的一枚棋子',                   mpCost: 4 },
   { id: 'swap',      name: '交换', description: '交换棋盘任意两颗棋子',               mpCost: 3 },
   { id: 'breed',     name: '繁殖', description: '选己方棋子，3×3范围生成2颗己方棋子', mpCost: 5 },
 ];
