@@ -275,36 +275,36 @@
   100% { transform: translate(-50%, -50%) scale(1); }
 }
 
-/* Pulse ring around breed-spawned piece */
-.stone.breed-popup::after {
-  content: '';
+/* Multi-layer shockwave rings for breed */
+.shock-ring {
   position: absolute;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
   width: 28px; height: 28px;
   border-radius: 50%;
-  border: 3px solid currentColor;
-  animation: breedPulse 1s ease-out forwards;
+  border: 10px solid;
+  opacity: 0;
   pointer-events: none;
+  z-index: 3;
+  animation: ringExpand 1.5s ease-out forwards;
 }
 
-.cell.black .stone.breed-popup::after {
-  color: rgba(120,120,120,0.7);
+.shock-ring {
+  border-color: rgba(255,255,255,0.6);
 }
 
-.cell.white .stone.breed-popup::after {
-  color: rgba(240,240,240,0.7);
+@keyframes ringExpand {
+  0%   { width: 14px; height: 14px; opacity: 0.8; border-width: 10px; }
+  30%  { opacity: 0.5; border-width: 6px; }
+  60%  { opacity: 0.25; border-width: 3px; }
+  85%  { opacity: 0.08; }
+  100% { width: 200px; height: 200px; opacity: 0; border-width: 2px; }
 }
 
-@keyframes breedPulse {
-  0%   { width: 28px; height: 28px; opacity: 0.9; }
-  50%  { opacity: 0.2; }
-  80%  { width: 400px; height: 400px; opacity: 0; }
-  85%  { opacity: 0.06; }
-  88%  { opacity: 0; }
-  93%  { opacity: 0.04; }
-  96%  { opacity: 0; }
-  100% { width: 500px; height: 500px; opacity: 0; }
+/* Bombard hover: red dashed ring on adjacent pieces */
+.cell.bomb-target .stone {
+  outline: 2.5px dashed #FF1744;
+  outline-offset: 2px;
 }
 
 /* Hover preview on empty cells */

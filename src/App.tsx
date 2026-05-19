@@ -38,6 +38,7 @@ export default function App() {
   const breedQueueRef = useRef<{ seedRow: number; seedCol: number; spawns: { row: number; col: number }[]; player: Player }[]>([]);
   const [breedPopupCells, setBreedPopupCells] = useState<Set<string>>(new Set());
   const [emberFlash, setEmberFlash] = useState<Player | null>(null);
+  const [bombHover, setBombHover] = useState<{ row: number; col: number } | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -518,6 +519,10 @@ export default function App() {
     return '';
   };
 
+  const isBombTarget = (r: number, c: number) =>
+    bombHover !== null &&
+    Math.abs(r - bombHover.row) + Math.abs(c - bombHover.col) === 1;
+
   const getTurnInfo = () => {
     if (phase === 'game_over') return '游戏结束';
     if (mode === 'online' && !localTurn) return `等待对方操作...`;
@@ -615,9 +620,18 @@ export default function App() {
               {row.map((cell, c) => (
                 <div
                   key={c}
-                  className={`cell ${cell} ${isFivePos(r, c) ? 'five' : ''} ${isTargetFirst(r, c) ? 'target-first' : ''} ${getCellHint(r, c)}`}
+                  className={`cell ${cell} ${isFivePos(r, c) ? 'five' : ''} ${isTargetFirst(r, c) ? 'target-first' : ''} ${getCellHint(r, c)} ${isBombTarget(r, c) ? 'bomb-target' : ''}`}
                   onClick={() => !boardDisabled && handleCellClick(r, c)}
+                  onMouseEnter={() => { if (phase === 'skill_targeting' && targetingSkill === 'bombard' && cell === 'empty') setBombHover({ row: r, col: c }); }}
+                  onMouseLeave={() => { if (bombHover?.row === r && bombHover?.col === c) setBombHover(null); }}
                 >
+                  {breedPopupCells.has(`${r},${c}`) && (
+                    <>
+                      <span className="shock-ring" style={{ animationDelay: '0s' }} />
+                      <span className="shock-ring" style={{ animationDelay: '0.3s' }} />
+                      <span className="shock-ring" style={{ animationDelay: '0.6s' }} />
+                    </>
+                  )}
                   {cell !== 'empty' && <div className={`stone ${breedPopupCells.has(`${r},${c}`) ? 'breed-popup' : ''}`} />}
                 </div>
               ))}

@@ -48,8 +48,8 @@ interface SwapAnim {
 }
 
 const EXPLOSION_DURATION = 36;
-const SWAP_DURATION = 36;       // frames: 24 anim + 12 trail fade (~600ms)
-const TRAIL_MAX = 16;
+const SWAP_DURATION = 54;       // frames: 36 anim + 18 trail fade (~900ms)
+const TRAIL_MAX = 22;
 
 function swapEase(t: number): number {
   if (t <= 0) return 0;
@@ -197,7 +197,7 @@ class EffectCanvas {
     for (let si = this.swapAnims.length - 1; si >= 0; si--) {
       const sa = this.swapAnims[si];
       sa.frame++;
-      const rawT = Math.min(sa.frame / 24, 1);
+      const rawT = Math.min(sa.frame / 36, 1);
       const easedT = swapEase(rawT);
 
       for (const piece of [sa.pieceA, sa.pieceB]) {
