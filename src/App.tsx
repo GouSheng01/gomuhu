@@ -3,7 +3,7 @@ import type { SkillId, GameMode, PeerAction, OnlinePhase, Player, Position } fro
 import { SKILLS, PLAYER_NAMES, TURN_TIME } from './constants';
 import {
   createInitialState, opponentOf, placePiece, chooseScore, chooseMP,
-  eliminatePiece, swapPieces, breedPieces, placeBomb, deductMP, nextTurn, tickGameTime,
+  eliminatePiece, swapPieces, breedPieces, placeBomb, useEmber, deductMP, nextTurn, tickGameTime,
 } from './gameLogic';
 import { aiDecide } from './aiService';
 import { createRoom, joinRoom, sendAction, onRemoteAction, onStatusChange, disconnect } from './peerService';
@@ -37,6 +37,7 @@ export default function App() {
   const swapQueueRef = useRef<{ row1: number; col1: number; row2: number; col2: number; p1: Player; p2: Player }[]>([]);
   const breedQueueRef = useRef<{ seedRow: number; seedCol: number; spawns: { row: number; col: number }[]; player: Player }[]>([]);
   const [breedPopupCells, setBreedPopupCells] = useState<Set<string>>(new Set());
+  const [emberFlash, setEmberFlash] = useState<Player | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -156,6 +157,13 @@ export default function App() {
         }
         if (r.state.phase === 'five_choice') return r.state;
         return nextTurn(r.state);
+      }
+      case 'skill_ember': {
+        let s = testModeRef.current ? state : deductMP(state, 1);
+        s = useEmber(s);
+        setEmberFlash(state.currentPlayer);
+        setTimeout(() => setEmberFlash(null), 2000);
+        return nextTurn(s);
       }
       case 'choose_score':
         return chooseScore(state);
@@ -457,6 +465,15 @@ export default function App() {
           return { ...prev, phase: 'skill_targeting', targetingSkill: 'breed', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
         case 'bombard':
           return { ...prev, phase: 'skill_targeting', targetingSkill: 'bombard', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
+        case 'ember': {
+          if (prev.players[player].fallen < 2) return prev; // need at least 2 fallen
+          let s = testModeRef.current ? prev : deductMP(prev, 1);
+          s = useEmber(s);
+          if (prev.mode === 'online') sendRef.current = { type: 'skill_ember' };
+          setEmberFlash(player);
+          setTimeout(() => setEmberFlash(null), 2000);
+          return nextTurn(s);
+        }
         default:
           return prev;
       }
@@ -569,7 +586,7 @@ export default function App() {
       </div>
 
       <div className="header">
-        <div className={`player-info black ${currentPlayer === 'black' ? 'active' : ''}`}>
+        <div className={`player-info black ${currentPlayer === 'black' ? 'active' : ''} ${emberFlash === 'black' ? 'ember-flash' : ''}`}>
           <span className="player-name">{players.black.name}{state.aiPlayer === 'black' ? ' (AI)' : myColor === 'black' ? ' (你)' : mode === 'online' ? ' (对手)' : ''}</span>
           <span>积分: {players.black.score}</span>
           <span>MP: {players.black.mp}</span>
@@ -582,7 +599,7 @@ export default function App() {
           <div className="timer-label mt">回合剩余</div>
           <div className={`timer ${turnTimeRemaining <= 30 ? 'danger' : ''}`}>{formatTime(turnTimeRemaining)}</div>
         </div>
-        <div className={`player-info white ${currentPlayer === 'white' ? 'active' : ''}`}>
+        <div className={`player-info white ${currentPlayer === 'white' ? 'active' : ''} ${emberFlash === 'white' ? 'ember-flash' : ''}`}>
           <span className="player-name">{players.white.name}{state.aiPlayer === 'white' ? ' (AI)' : myColor === 'white' ? ' (你)' : mode === 'online' ? ' (对手)' : ''}</span>
           <span>积分: {players.white.score}</span>
           <span>MP: {players.white.mp}</span>
@@ -613,7 +630,8 @@ export default function App() {
         <span className="skills-label">{curPlayer.name} 技能</span>
         {SKILLS.map(skill => {
           const canAfford = testModeRef.current || curPlayer.mp >= skill.mpCost;
-          const canUse = phase === 'playing' && canAfford && localTurn && !isAI;
+          const canEmber = skill.id !== 'ember' || curPlayer.fallen >= 2;
+          const canUse = phase === 'playing' && canAfford && localTurn && !isAI && canEmber;
           return (
             <div
               key={skill.id}

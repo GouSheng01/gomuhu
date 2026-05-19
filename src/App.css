@@ -102,6 +102,16 @@
   font-size: 12px;
 }
 
+.player-info.ember-flash .fallen-stat {
+  animation: emberBreathe 0.8s ease-in-out 3;
+  color: #FF6D00;
+}
+
+@keyframes emberBreathe {
+  0%, 100% { text-shadow: 0 0 0 rgba(255, 109, 0, 0); }
+  50%      { text-shadow: 0 0 12px rgba(255, 109, 0, 0.8), 0 0 24px rgba(255, 109, 0, 0.4); }
+}
+
 /* Center info */
 .center-info {
   display: flex;
@@ -392,11 +402,17 @@
   z-index: 4;
 }
 
+.skill-card.ember {
+  background-color: #7B1FA2;
+  transform: rotate(-3deg) translateY(1px);
+  z-index: 5;
+}
+
 .skill-card.cancel {
   background-color: #1a1a1a;
   color: #FF5252;
   transform: rotate(0.5deg) translateY(1px);
-  z-index: 5;
+  z-index: 6;
 }
 
 /* ===== Card innards — rank-style corners ===== */

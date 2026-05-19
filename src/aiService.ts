@@ -1,7 +1,7 @@
 import type { GameState, Player, Position, SkillId } from './types';
 import { BOARD_SIZE, WIN_LENGTH, BREED_RANGE } from './constants';
 import {
-  placePiece, chooseScore, chooseMP, eliminatePiece, swapPieces, breedPieces, placeBomb, deductMP, nextTurn,
+  placePiece, chooseScore, chooseMP, eliminatePiece, swapPieces, breedPieces, placeBomb, useEmber, deductMP, nextTurn,
   opponentOf, checkWin,
 } from './gameLogic';
 import type { CellState } from './types';
@@ -235,7 +235,14 @@ function shouldUseSkill(state: GameState, ai: Player): SkillId | null {
     return 'eliminate';
   }
 
-  // === Priority 5: 轰炸 (4MP) — aggressive when opp pieces are clustered ===
+  // === Priority 5: 馀烬 (1MP) — convert fallen to MP when low ===
+  const fallen = state.players[ai].fallen;
+  if (mp < 4 && fallen >= 4 && Math.random() < 0.6) {
+    log('using ember');
+    return 'ember';
+  }
+
+  // === Priority 6: 轰炸 (4MP) — aggressive when opp pieces are clustered ===
   if (mp >= 4 && oppCount > 6 && Math.random() < 0.45) {
     log('using bombard');
     return 'bombard';
@@ -381,6 +388,12 @@ export function aiDecide(state: GameState): GameState {
   }
   if (skillChoice === 'bombard') {
     return { ...state, phase: 'skill_targeting', targetingSkill: 'bombard', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
+  }
+  if (skillChoice === 'ember') {
+    log('activating ember');
+    let s = deductMP(state, 1);
+    s = useEmber(s);
+    return nextTurn(s);
   }
 
   // Place a piece

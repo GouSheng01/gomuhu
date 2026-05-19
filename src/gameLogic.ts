@@ -333,6 +333,25 @@ export function placeBomb(
   };
 }
 
+/** Ember skill: convert half of fallen pieces to MP. */
+export function useEmber(state: GameState): GameState {
+  const player = state.currentPlayer;
+  const p = state.players[player];
+  const converted = Math.floor(p.fallen / 2);
+  if (converted === 0) return state;
+  return {
+    ...state,
+    players: {
+      ...state.players,
+      [player]: {
+        ...p,
+        fallen: p.fallen - converted,
+        mp: p.mp + converted,
+      },
+    },
+  };
+}
+
 /** Deduct MP for using a skill. */
 export function deductMP(state: GameState, cost: number): GameState {
   return {
