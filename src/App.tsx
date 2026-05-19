@@ -33,7 +33,7 @@ export default function App() {
   const sendRef = useRef<PeerAction | null>(null);
   const boardRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const elimQueueRef = useRef<{ row: number; col: number }[]>([]);
+  const elimQueueRef = useRef<{ row: number; col: number; player: Player }[]>([]);
 
   // Attach and sync flame canvas whenever board is present
   useEffect(() => {
@@ -62,7 +62,7 @@ export default function App() {
     for (const pos of q) {
       const cx = pad + pos.col * cellSize + cellSize / 2;
       const cy = pad + pos.row * cellSize + cellSize / 2;
-      flameCanvas.emit(cx, cy);
+      flameCanvas.emit(cx, cy, pos.player);
     }
   });
 
@@ -75,10 +75,11 @@ export default function App() {
       }
       case 'skill_eliminate': {
         let s = testModeRef.current ? state : deductMP(state, 4);
-        elimQueueRef.current.push(action.targets[0]);
+        const targetPlayer = opponentOf(state.currentPlayer);
+        elimQueueRef.current.push({ ...action.targets[0], player: targetPlayer });
         s = eliminatePiece(s, action.targets[0]);
         if (s.phase === 'five_choice') return s;
-        elimQueueRef.current.push(action.targets[1]);
+        elimQueueRef.current.push({ ...action.targets[1], player: targetPlayer });
         s = eliminatePiece(s, action.targets[1]);
         if (s.phase === 'five_choice') return s;
         return nextTurn(s);
@@ -261,7 +262,7 @@ export default function App() {
           const isFirst = prev.eliminatedCount === 0;
           const firstTarget = isFirst ? { row, col } : prev.targetingFirst;
           const s = isFirst && !testModeRef.current ? deductMP(prev, 4) : prev;
-          elimQueueRef.current.push({ row, col });
+          elimQueueRef.current.push({ row, col, player: targetPlayer });
           let afterElim = eliminatePiece(s, { row, col });
           // Preserve first target position (eliminatePiece clears it)
           afterElim = { ...afterElim, targetingFirst: firstTarget };

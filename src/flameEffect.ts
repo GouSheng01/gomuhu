@@ -7,6 +7,8 @@ interface Particle {
   maxLife: number;
   size: number;
   type: 'debris' | 'spark' | 'core';
+  /** Piece color this particle belongs to */
+  player: 'black' | 'white';
 }
 
 interface Shockwave {
@@ -20,6 +22,7 @@ interface Shockwave {
 interface Explosion {
   x: number;
   y: number;
+  player: 'black' | 'white';
   frame: number;
   particles: Particle[];
   shockwave: Shockwave;
@@ -56,7 +59,7 @@ class ExplosionCanvas {
     }
   }
 
-  emit(cx: number, cy: number) {
+  emit(cx: number, cy: number, player: 'black' | 'white') {
     const particles: Particle[] = [];
 
     // Core flash: large bright short-lived center burst
@@ -71,6 +74,7 @@ class ExplosionCanvas {
         maxLife: 14,
         size: 8 + Math.random() * 6,
         type: 'core',
+        player,
       });
     }
 
@@ -86,23 +90,24 @@ class ExplosionCanvas {
         maxLife: 20,
         size: 1.5 + Math.random() * 2.5,
         type: 'spark',
+        player,
       });
     }
 
     // Debris: main explosion body
     for (let i = 0; i < 55; i++) {
       const angle = Math.random() * Math.PI * 2;
-      // Bias toward more horizontal particles for classic explosion look
       const speed = 1.5 + Math.random() * 5;
       particles.push({
         x: cx + (Math.random() - 0.5) * 4,
         y: cy + (Math.random() - 0.5) * 4,
         vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed * 0.85, // slightly flatter
+        vy: Math.sin(angle) * speed * 0.85,
         life: 15 + Math.random() * 25,
         maxLife: 20 + Math.random() * 20,
         size: 2.5 + Math.random() * 7,
         type: 'debris',
+        player,
       });
     }
 
@@ -114,7 +119,7 @@ class ExplosionCanvas {
       alpha: 1,
     };
 
-    this.explosions.push({ x: cx, y: cy, frame: 0, particles, shockwave });
+    this.explosions.push({ x: cx, y: cy, player, frame: 0, particles, shockwave });
     if (!this.rafId) this.startLoop();
   }
 
@@ -143,12 +148,10 @@ class ExplosionCanvas {
       const ex = this.explosions[ei];
       ex.frame++;
 
-      // Update particles
       for (let i = ex.particles.length - 1; i >= 0; i--) {
         const p = ex.particles[i];
         p.x += p.vx;
         p.y += p.vy;
-        // Deceleration — stronger for faster particles (sparks)
         const drag = p.type === 'spark' ? 0.94 : p.type === 'core' ? 0.92 : 0.955;
         p.vx *= drag;
         p.vy *= drag;
@@ -159,13 +162,11 @@ class ExplosionCanvas {
         }
       }
 
-      // Update shockwave
       const sw = ex.shockwave;
       const t = ex.frame / EXPLOSION_DURATION;
       sw.radius = 6 + (sw.maxRadius - 6) * Math.pow(t, 0.7);
       sw.alpha = 1 - Math.pow(t, 1.5);
 
-      // Remove finished explosions
       if (ex.frame >= EXPLOSION_DURATION && ex.particles.length === 0) {
         this.explosions.splice(ei, 1);
       }
@@ -177,14 +178,16 @@ class ExplosionCanvas {
     ctx.clearRect(0, 0, this.boardW, this.boardH);
 
     for (const ex of this.explosions) {
-      // Draw shockwave ring
+      const isBlack = ex.player === 'black';
+
+      // Shockwave ring
       const sw = ex.shockwave;
       if (sw.alpha > 0.01) {
         ctx.save();
         ctx.globalAlpha = sw.alpha;
-        ctx.strokeStyle = '#FFD600';
+        ctx.strokeStyle = isBlack ? '#aaa' : '#fff';
         ctx.lineWidth = 4 * (1 - ex.frame / EXPLOSION_DURATION);
-        ctx.shadowColor = 'rgba(255, 200, 0, 0.6)';
+        ctx.shadowColor = isBlack ? 'rgba(180,180,180,0.6)' : 'rgba(255,255,255,0.7)';
         ctx.shadowBlur = 8;
         ctx.beginPath();
         ctx.arc(sw.x, sw.y, sw.radius, 0, Math.PI * 2);
@@ -192,52 +195,98 @@ class ExplosionCanvas {
         ctx.restore();
       }
 
-      // Draw particles
+      // Particles
       for (const p of ex.particles) {
         const t = p.life / p.maxLife;
         let r: number, g: number, b: number, alpha: number;
+        let shadowR: number, shadowG: number, shadowB: number, shadowA: number;
 
-        if (p.type === 'core') {
-          // Core: white → yellow → fade
-          if (t > 0.5) {
-            const s = (t - 0.5) / 0.5;
-            r = 255; g = 240 + Math.floor(s * 15); b = Math.floor(180 + s * 75);
-            alpha = 1;
+        if (isBlack) {
+          // Black piece: gray-scale explosion
+          if (p.type === 'core') {
+            if (t > 0.5) {
+              r = 240; g = 240; b = 240; alpha = 1;
+            } else {
+              const s = t * 2;
+              r = Math.floor(160 * s); g = Math.floor(160 * s); b = Math.floor(160 * s);
+              alpha = s;
+            }
+            shadowR = 200; shadowG = 200; shadowB = 200; shadowA = 0.7;
+          } else if (p.type === 'spark') {
+            if (t > 0.6) {
+              r = 255; g = 255; b = 255; alpha = 1;
+            } else if (t > 0.3) {
+              const s = (t - 0.3) / 0.3;
+              r = Math.floor(180 + s * 75); g = r; b = r;
+              alpha = 0.9;
+            } else {
+              r = Math.floor(120 * t / 0.3); g = r; b = r;
+              alpha = t / 0.3;
+            }
+            shadowR = 220; shadowG = 220; shadowB = 220; shadowA = 0.7;
           } else {
-            r = 255; g = Math.floor(200 * t); b = 0;
-            alpha = t * 2;
-          }
-        } else if (p.type === 'spark') {
-          // Sparks: bright yellow-white → orange → red
-          if (t > 0.6) {
-            r = 255; g = 255; b = 200;
-            alpha = 1;
-          } else if (t > 0.3) {
-            const s = (t - 0.3) / 0.3;
-            r = 255; g = Math.floor(150 + s * 105); b = Math.floor(s * 100);
-            alpha = 0.9;
-          } else {
-            r = 255; g = Math.floor(80 * t); b = 0;
-            alpha = t / 0.3;
+            // Debris: light gray → charcoal → fade
+            if (t > 0.7) {
+              const s = (t - 0.7) / 0.3;
+              const v = Math.floor(180 + s * 75);
+              r = v; g = v; b = v; alpha = 1;
+            } else if (t > 0.4) {
+              const s = (t - 0.4) / 0.3;
+              const v = Math.floor(100 + s * 80);
+              r = v; g = v; b = v; alpha = 0.85;
+            } else if (t > 0.15) {
+              const s = (t - 0.15) / 0.25;
+              const v = Math.floor(30 + s * 70);
+              r = v; g = v; b = v; alpha = 0.5 + s * 0.35;
+            } else {
+              const s = t / 0.15;
+              const v = Math.floor(20 * s);
+              r = v; g = v; b = v; alpha = s * 0.5;
+            }
+            shadowR = 100; shadowG = 100; shadowB = 100; shadowA = 0.4;
           }
         } else {
-          // Debris: yellow → orange → red → dark
-          if (t > 0.7) {
-            const s = (t - 0.7) / 0.3;
-            r = 255; g = Math.floor(200 + s * 55); b = Math.floor(30 + s * 120);
-            alpha = 1;
-          } else if (t > 0.4) {
-            const s = (t - 0.4) / 0.3;
-            r = 255; g = Math.floor(100 + s * 100); b = Math.floor(s * 30);
-            alpha = 0.85;
-          } else if (t > 0.15) {
-            const s = (t - 0.15) / 0.25;
-            r = Math.floor(180 + s * 75); g = Math.floor(20 + s * 80 * (1 - s)); b = 0;
-            alpha = 0.5 + s * 0.35;
+          // White piece: warm cream/white explosion
+          if (p.type === 'core') {
+            if (t > 0.5) {
+              r = 255; g = 250; b = 235; alpha = 1;
+            } else {
+              const s = t * 2;
+              r = 255; g = Math.floor(220 * s); b = Math.floor(180 * s);
+              alpha = s;
+            }
+            shadowR = 255; shadowG = 240; shadowB = 200; shadowA = 0.7;
+          } else if (p.type === 'spark') {
+            if (t > 0.6) {
+              r = 255; g = 255; b = 245; alpha = 1;
+            } else if (t > 0.3) {
+              const s = (t - 0.3) / 0.3;
+              r = 255; g = Math.floor(220 + s * 35); b = Math.floor(180 + s * 65);
+              alpha = 0.9;
+            } else {
+              r = Math.floor(200 * t / 0.3); g = Math.floor(180 * t / 0.3); b = Math.floor(150 * t / 0.3);
+              alpha = t / 0.3;
+            }
+            shadowR = 255; shadowG = 240; shadowB = 200; shadowA = 0.7;
           } else {
-            const s = t / 0.15;
-            r = Math.floor(120 * s); g = Math.floor(8 * s); b = Math.floor(5 * s);
-            alpha = s * 0.5;
+            if (t > 0.7) {
+              const s = (t - 0.7) / 0.3;
+              r = 255; g = Math.floor(230 + s * 25); b = Math.floor(200 + s * 55);
+              alpha = 1;
+            } else if (t > 0.4) {
+              const s = (t - 0.4) / 0.3;
+              r = 240; g = Math.floor(200 + s * 40); b = Math.floor(160 + s * 40);
+              alpha = 0.85;
+            } else if (t > 0.15) {
+              const s = (t - 0.15) / 0.25;
+              r = Math.floor(180 + s * 60); g = Math.floor(150 + s * 50); b = Math.floor(120 + s * 40);
+              alpha = 0.5 + s * 0.35;
+            } else {
+              const s = t / 0.15;
+              r = Math.floor(140 * s); g = Math.floor(120 * s); b = Math.floor(100 * s);
+              alpha = s * 0.5;
+            }
+            shadowR = 200; shadowG = 180; shadowB = 150; shadowA = 0.4;
           }
         }
 
@@ -246,13 +295,13 @@ class ExplosionCanvas {
         ctx.fillStyle = `rgb(${r},${g},${b})`;
 
         if (p.type === 'spark') {
-          ctx.shadowColor = `rgba(255, 220, 50, 0.8)`;
+          ctx.shadowColor = `rgba(${shadowR},${shadowG},${shadowB},${shadowA + 0.1})`;
           ctx.shadowBlur = p.size * 2;
         } else if (p.type === 'core') {
-          ctx.shadowColor = `rgba(255, 200, 100, 0.7)`;
+          ctx.shadowColor = `rgba(${shadowR},${shadowG},${shadowB},${shadowA})`;
           ctx.shadowBlur = p.size * 4;
         } else {
-          ctx.shadowColor = `rgba(255, ${Math.floor(100 * t)}, 0, 0.5)`;
+          ctx.shadowColor = `rgba(${shadowR},${shadowG},${shadowB},${shadowA})`;
           ctx.shadowBlur = p.size * 2;
         }
 
