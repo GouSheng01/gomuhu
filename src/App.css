@@ -253,6 +253,50 @@
   outline-offset: 2px;
 }
 
+/* Breed pop-in animation */
+.stone.breed-popup {
+  animation: breedPopIn 0.67s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes breedPopIn {
+  0%   { transform: translate(-50%, -50%) scale(0); }
+  65%  { transform: translate(-50%, -50%) scale(1.22); }
+  85%  { transform: translate(-50%, -50%) scale(0.94); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+/* Pulse ring around breed-spawned piece */
+.stone.breed-popup::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 3px solid currentColor;
+  animation: breedPulse 1s ease-out forwards;
+  pointer-events: none;
+}
+
+.cell.black .stone.breed-popup::after {
+  color: rgba(120,120,120,0.7);
+}
+
+.cell.white .stone.breed-popup::after {
+  color: rgba(240,240,240,0.7);
+}
+
+@keyframes breedPulse {
+  0%   { width: 28px; height: 28px; opacity: 0.9; }
+  50%  { opacity: 0.2; }
+  80%  { width: 400px; height: 400px; opacity: 0; }
+  85%  { opacity: 0.06; }
+  88%  { opacity: 0; }
+  93%  { opacity: 0.04; }
+  96%  { opacity: 0; }
+  100% { width: 500px; height: 500px; opacity: 0; }
+}
+
 /* Hover preview on empty cells */
 .cell:not(.black):not(.white):hover::after {
   content: '';

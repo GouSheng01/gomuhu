@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { SkillId, GameMode, PeerAction, OnlinePhase, Player } from './types';
+import type { SkillId, GameMode, PeerAction, OnlinePhase, Player, Position } from './types';
 import { SKILLS, PLAYER_NAMES, TURN_TIME } from './constants';
 import {
   createInitialState, opponentOf, placePiece, chooseScore, chooseMP,
@@ -35,6 +35,10 @@ export default function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const elimQueueRef = useRef<{ row: number; col: number; player: Player }[]>([]);
   const swapQueueRef = useRef<{ row1: number; col1: number; row2: number; col2: number; p1: Player; p2: Player }[]>([]);
+  const breedQueueRef = useRef<{ seedRow: number; seedCol: number; spawns: { row: number; col: number }[]; player: Player }[]>([]);
+  const [breedPopupCells, setBreedPopupCells] = useState<Set<string>>(new Set());
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   // Attach and sync flame canvas whenever board is present
   useEffect(() => {
@@ -87,6 +91,29 @@ export default function App() {
     }
   });
 
+  // Flush breed queue → apply CSS pop-in class
+  useEffect(() => {
+    const q = breedQueueRef.current;
+    if (q.length === 0) return;
+    breedQueueRef.current = [];
+    const cells = new Set<string>();
+    for (const b of q) {
+      for (const s of b.spawns) cells.add(`${s.row},${s.col}`);
+    }
+    setBreedPopupCells(prev => {
+      const next = new Set(prev);
+      cells.forEach(k => next.add(k));
+      return next;
+    });
+    setTimeout(() => {
+      setBreedPopupCells(prev => {
+        const next = new Set(prev);
+        cells.forEach(k => next.delete(k));
+        return next;
+      });
+    }, 1100);
+  });
+
   function applyRemoteAction(state: ReturnType<typeof createInitialState>, action: PeerAction): ReturnType<typeof createInitialState> {
     switch (action.type) {
       case 'place': {
@@ -116,6 +143,7 @@ export default function App() {
       }
       case 'skill_breed': {
         let s = testModeRef.current ? state : deductMP(state, 5);
+        breedQueueRef.current.push({ seedRow: action.seed.row, seedCol: action.seed.col, spawns: action.spawns, player: state.currentPlayer });
         const r = breedPieces(s, action.seed, action.spawns);
         if (r.state.phase === 'five_choice') return r.state;
         return nextTurn(r.state);
@@ -273,6 +301,33 @@ export default function App() {
   const localTurn = isMyTurn(state, myColor) && state.aiPlayer !== state.currentPlayer;
 
   const handleCellClick = useCallback((row: number, col: number) => {
+    // Pre-compute breed spawns outside setState to avoid random drift
+    const curState = stateRef.current;
+    let forceSpawns: [Position, Position] | undefined;
+    if (curState.phase === 'skill_targeting' && curState.targetingSkill === 'breed'
+        && curState.board[row][col] === curState.currentPlayer) {
+      const emptySpots: Position[] = [];
+      const half = Math.floor(3 / 2);
+      for (let dr = -half; dr <= half; dr++) {
+        for (let dc = -half; dc <= half; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const r = row + dr, c = col + dc;
+          if (r >= 0 && r < 15 && c >= 0 && c < 15 && curState.board[r][c] === 'empty') {
+            emptySpots.push({ row: r, col: c });
+          }
+        }
+      }
+      if (emptySpots.length >= 2) {
+        const shuffled = emptySpots.sort(() => Math.random() - 0.5);
+        forceSpawns = [shuffled[0], shuffled[1]];
+        breedQueueRef.current.push({
+          seedRow: row, seedCol: col,
+          spawns: forceSpawns,
+          player: curState.currentPlayer,
+        });
+      }
+    }
+
     setState(prev => {
       if (prev.phase === 'game_over') return prev;
       if (!isMyTurn(prev, myColor)) return prev;
@@ -323,7 +378,7 @@ export default function App() {
         if (prev.targetingSkill === 'breed') {
           if (prev.board[row][col] !== prev.currentPlayer) return prev;
           let s = testModeRef.current ? prev : deductMP(prev, 5);
-          const r = breedPieces(s, { row, col });
+          const r = breedPieces(s, { row, col }, forceSpawns);
           if (prev.mode === 'online' && r.spawns) {
             sendRef.current = { type: 'skill_breed', seed: { row, col }, spawns: r.spawns };
           }
@@ -519,7 +574,7 @@ export default function App() {
                   className={`cell ${cell} ${isFivePos(r, c) ? 'five' : ''} ${isTargetFirst(r, c) ? 'target-first' : ''} ${getCellHint(r, c)}`}
                   onClick={() => !boardDisabled && handleCellClick(r, c)}
                 >
-                  {cell !== 'empty' && <div className="stone" />}
+                  {cell !== 'empty' && <div className={`stone ${breedPopupCells.has(`${r},${c}`) ? 'breed-popup' : ''}`} />}
                 </div>
               ))}
             </div>

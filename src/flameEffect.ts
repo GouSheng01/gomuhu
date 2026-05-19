@@ -211,6 +211,7 @@ class EffectCanvas {
         this.swapAnims.splice(si, 1);
       }
     }
+
   }
 
   // ---- Draw ----
