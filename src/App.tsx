@@ -3,7 +3,7 @@ import type { SkillId, GameMode, PeerAction, OnlinePhase, Player, Position } fro
 import { SKILLS, PLAYER_NAMES, TURN_TIME } from './constants';
 import {
   createInitialState, opponentOf, placePiece, chooseScore, chooseMP,
-  eliminatePiece, swapPieces, breedPieces, placeBomb, useEmber, deductMP, nextTurn, tickGameTime,
+  eliminatePiece, swapPieces, breedPieces, placeBomb, doomChain, useEmber, deductMP, nextTurn, tickGameTime,
 } from './gameLogic';
 import { aiDecide } from './aiService';
 import { createRoom, joinRoom, sendAction, onRemoteAction, onStatusChange, disconnect } from './peerService';
@@ -178,6 +178,15 @@ export default function App() {
         setEmberFlash(state.currentPlayer);
         setTimeout(() => setEmberFlash(null), 2000);
         return nextTurn(s);
+      }
+      case 'skill_doom': {
+        let s = testModeRef.current ? state : deductMP(state, 10);
+        const r = doomChain(s, action.seed);
+        for (let i = 0; i < r.eliminated.length; i++) {
+          elimQueueRef.current.push({ row: r.eliminated[i].row, col: r.eliminated[i].col, player: r.eliminatedPlayers[i] });
+        }
+        if (r.state.phase === 'five_choice') return r.state;
+        return nextTurn(r.state);
       }
       case 'choose_score':
         return chooseScore(state);
@@ -430,6 +439,20 @@ export default function App() {
           return newState.phase === 'five_choice' ? newState : nextTurn(newState);
         }
 
+        // --- Doom ---
+        if (prev.targetingSkill === 'doom') {
+          if (prev.board[row][col] !== prev.currentPlayer) return prev;
+          let s = testModeRef.current ? prev : deductMP(prev, 10);
+          const { state: newState, eliminated, eliminatedPlayers } = doomChain(s, { row, col });
+          for (let i = 0; i < eliminated.length; i++) {
+            elimQueueRef.current.push({ row: eliminated[i].row, col: eliminated[i].col, player: eliminatedPlayers[i] });
+          }
+          if (prev.mode === 'online') {
+            sendRef.current = { type: 'skill_doom', seed: { row, col }, eliminated, eliminatedPlayers };
+          }
+          return newState.phase === 'five_choice' ? newState : nextTurn(newState);
+        }
+
         return prev;
       }
 
@@ -479,6 +502,8 @@ export default function App() {
           return { ...prev, phase: 'skill_targeting', targetingSkill: 'breed', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
         case 'bombard':
           return { ...prev, phase: 'skill_targeting', targetingSkill: 'bombard', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
+        case 'doom':
+          return { ...prev, phase: 'skill_targeting', targetingSkill: 'doom', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
         case 'ember': {
           if (prev.players[player].fallen < 2) return prev; // need at least 2 fallen
           let s = testModeRef.current ? prev : deductMP(prev, 1);
@@ -528,6 +553,7 @@ export default function App() {
       if (targetingSkill === 'swap' && board[r][c] !== 'empty') return 'targetable';
       if (targetingSkill === 'breed' && board[r][c] === currentPlayer) return 'targetable';
       if (targetingSkill === 'bombard' && board[r][c] === 'empty') return 'targetable';
+      if (targetingSkill === 'doom' && board[r][c] === currentPlayer) return 'targetable';
     }
     return '';
   };
@@ -545,6 +571,7 @@ export default function App() {
       if (targetingSkill === 'swap') return `交换: 选第${targetingStep === 0 ? '一' : '二'}颗棋子`;
       if (targetingSkill === 'breed') return '繁殖: 点击己方棋子作为种子';
       if (targetingSkill === 'bombard') return '轰炸: 点击空格落子，炸毁相邻所有棋子';
+      if (targetingSkill === 'doom') return '终结: 点击己方棋子作为连锁起点';
     }
     return `当前回合: ${PLAYER_NAMES[currentPlayer]}${isAI ? ' (AI思考中...)' : ''}`;
   };

@@ -417,11 +417,17 @@
   z-index: 5;
 }
 
+.skill-card.doom {
+  background-color: #1a1a1a;
+  transform: rotate(-1deg) translateY(0px);
+  z-index: 6;
+}
+
 .skill-card.cancel {
   background-color: #1a1a1a;
   color: #FF5252;
   transform: rotate(0.5deg) translateY(1px);
-  z-index: 6;
+  z-index: 7;
 }
 
 /* ===== Card innards — rank-style corners ===== */

@@ -1,7 +1,7 @@
 import type { GameState, Player, Position, SkillId } from './types';
 import { BOARD_SIZE, WIN_LENGTH, BREED_RANGE } from './constants';
 import {
-  placePiece, chooseScore, chooseMP, eliminatePiece, swapPieces, breedPieces, placeBomb, useEmber, deductMP, nextTurn,
+  placePiece, chooseScore, chooseMP, eliminatePiece, swapPieces, breedPieces, placeBomb, doomChain, useEmber, deductMP, nextTurn,
   opponentOf, checkWin,
 } from './gameLogic';
 import type { CellState } from './types';
@@ -156,6 +156,57 @@ function findBombCell(board: CellState[][], ai: Player): Position | null {
   return best;
 }
 
+/** Find best doom seed: own piece that chains the most, destroying the most enemies. */
+function findDoomSeed(board: CellState[][], ai: Player): Position | null {
+  const opp = opponentOf(ai);
+  let best: Position | null = null;
+  let bestScore = -1;
+
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r][c] !== ai) continue;
+      // BFS chain size from this seed
+      const marked = new Set<string>();
+      const queue: Position[] = [{ row: r, col: c }];
+      marked.add(`${r},${c}`);
+      while (queue.length > 0) {
+        const cur = queue.shift()!;
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            const nr = cur.row + dr, nc = cur.col + dc;
+            const key = `${nr},${nc}`;
+            if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE
+                && board[nr][nc] === ai && !marked.has(key)) {
+              marked.add(key);
+              queue.push({ row: nr, col: nc });
+            }
+          }
+        }
+      }
+      // Count enemies adjacent to any marked piece
+      let enemyCount = 0;
+      const counted = new Set<string>();
+      const dirs: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      for (const key of marked) {
+        const [mr, mc] = key.split(',').map(Number);
+        for (const [dr, dc] of dirs) {
+          const nr = mr + dr, nc = mc + dc;
+          const nKey = `${nr},${nc}`;
+          if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE
+              && board[nr][nc] === opp && !counted.has(nKey)) {
+            counted.add(nKey);
+            enemyCount++;
+          }
+        }
+      }
+      const score = marked.size * 3 + enemyCount * 2;
+      if (score > bestScore) { bestScore = score; best = { row: r, col: c }; }
+    }
+  }
+  return best;
+}
+
 /** Find swap positions: AI's worst piece swapped with opponent's best. */
 function findSwapPositions(board: CellState[][], ai: Player): { pos1: Position; pos2: Position } | null {
   const opp = opponentOf(ai);
@@ -235,7 +286,41 @@ function shouldUseSkill(state: GameState, ai: Player): SkillId | null {
     return 'eliminate';
   }
 
-  // === Priority 5: 馀烬 (1MP) — convert fallen to MP when low ===
+  // === Priority 5: 终结 (10MP) — massive chain clear ===
+  if (mp >= 10) {
+    const seed = findDoomSeed(board, ai);
+    if (seed) {
+      // Quick estimate of enemy eliminations
+      const marked = new Set<string>();
+      const queue: Position[] = [seed];
+      marked.add(`${seed.row},${seed.col}`);
+      while (queue.length > 0) {
+        const cur = queue.shift()!;
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            const nr = cur.row + dr, nc = cur.col + dc;
+            const key = `${nr},${nc}`;
+            if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE
+                && board[nr][nc] === ai && !marked.has(key)) {
+              marked.add(key);
+              queue.push({ row: nr, col: nc });
+            }
+          }
+        }
+      }
+      if (marked.size >= 8 && Math.random() < 0.7) {
+        log(`using doom (chain ${marked.size})`);
+        return 'doom';
+      }
+      if (marked.size >= 4 && Math.random() < 0.3) {
+        log(`using doom (chain ${marked.size})`);
+        return 'doom';
+      }
+    }
+  }
+
+  // === Priority 6: 馀烬 (1MP) — convert fallen to MP when low ===
   const fallen = state.players[ai].fallen;
   if (mp < 4 && fallen >= 4 && Math.random() < 0.6) {
     log('using ember');
@@ -370,6 +455,19 @@ export function aiDecide(state: GameState): GameState {
       return nextTurn(state);
     }
 
+    // --- Doom (1-step: pick own piece as seed) ---
+    if (state.targetingSkill === 'doom') {
+      const seed = findDoomSeed(state.board, ai);
+      if (seed) {
+        log(`doom seed: ${seed.row},${seed.col}`);
+        let s = deductMP(state, 10);
+        const r = doomChain(s, seed);
+        return r.state.phase === 'five_choice' ? r.state : nextTurn(r.state);
+      }
+      log('doom: no valid seed, cancelling');
+      return nextTurn(state);
+    }
+
     log('targeting fallback');
     return nextTurn(state);
   }
@@ -388,6 +486,9 @@ export function aiDecide(state: GameState): GameState {
   }
   if (skillChoice === 'bombard') {
     return { ...state, phase: 'skill_targeting', targetingSkill: 'bombard', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
+  }
+  if (skillChoice === 'doom') {
+    return { ...state, phase: 'skill_targeting', targetingSkill: 'doom', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
   }
   if (skillChoice === 'ember') {
     log('activating ember');

@@ -14,7 +14,7 @@ export interface PlayerState {
   fallen: number;
 }
 
-export type SkillId = 'eliminate' | 'swap' | 'breed' | 'bombard' | 'ember';
+export type SkillId = 'eliminate' | 'swap' | 'breed' | 'bombard' | 'ember' | 'doom';
 
 export interface SkillDef {
   id: SkillId;
@@ -41,6 +41,7 @@ export type PeerAction =
   | { type: 'skill_breed'; seed: Position; spawns: [Position, Position] }
   | { type: 'skill_bombard'; row: number; col: number; eliminated: Position[] }
   | { type: 'skill_ember' }
+  | { type: 'skill_doom'; seed: Position; eliminated: Position[]; eliminatedPlayers: ('black' | 'white')[] }
   | { type: 'choose_score' }
   | { type: 'choose_mp' }
   | { type: 'cancel_skill' };

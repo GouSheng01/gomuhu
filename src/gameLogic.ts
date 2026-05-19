@@ -334,6 +334,85 @@ export function placeBomb(
   };
 }
 
+/** Doom skill: BFS chain-mark own pieces in 3×3, then all marked pieces bomb adjacent. */
+export function doomChain(
+  state: GameState,
+  seed: Position,
+): { state: GameState; eliminated: Position[]; eliminatedPlayers: ('black' | 'white')[] } {
+  const board = state.board.map(r => [...r]);
+  const player = state.currentPlayer;
+
+  // BFS: find all connected own pieces in 3x3 range
+  const marked = new Set<string>();
+  const queue: Position[] = [seed];
+  marked.add(`${seed.row},${seed.col}`);
+
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dr === 0 && dc === 0) continue;
+        const r = cur.row + dr;
+        const c = cur.col + dc;
+        const key = `${r},${c}`;
+        if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE
+            && board[r][c] === player && !marked.has(key)) {
+          marked.add(key);
+          queue.push({ row: r, col: c });
+        }
+      }
+    }
+  }
+
+  // Each marked piece bombs its 4 adjacent cells
+  const eliminatedSet = new Set<string>();
+  const eliminated: Position[] = [];
+  const eliminatedPlayers: ('black' | 'white')[] = [];
+  const dirs: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+  for (const key of marked) {
+    const [r, c] = key.split(',').map(Number);
+    for (const [dr, dc] of dirs) {
+      const nr = r + dr;
+      const nc = c + dc;
+      const nKey = `${nr},${nc}`;
+      if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE
+          && board[nr][nc] !== 'empty' && !marked.has(nKey) && !eliminatedSet.has(nKey)) {
+        eliminatedSet.add(nKey);
+        eliminated.push({ row: nr, col: nc });
+        eliminatedPlayers.push(board[nr][nc] as 'black' | 'white');
+        board[nr][nc] = 'empty';
+      }
+    }
+  }
+
+  const fallenBy: Record<string, number> = { black: 0, white: 0 };
+  for (const ep of eliminatedPlayers) fallenBy[ep]++;
+
+  const newPlayers = {
+    ...state.players,
+    black: { ...state.players.black, fallen: state.players.black.fallen + (fallenBy.black || 0) },
+    white: { ...state.players.white, fallen: state.players.white.fallen + (fallenBy.white || 0) },
+  };
+
+  const fives = scanBoardForAllWins(board, player);
+
+  return {
+    state: {
+      ...state,
+      board,
+      players: newPlayers,
+      fivePositions: fives,
+      phase: fives.length > 0 ? 'five_choice' : 'playing',
+      targetingSkill: null,
+      targetingStep: 0,
+      targetingFirst: null,
+    },
+    eliminated,
+    eliminatedPlayers,
+  };
+}
+
 /** Ember skill: convert half of fallen pieces to MP. */
 export function useEmber(state: GameState): GameState {
   const player = state.currentPlayer;
