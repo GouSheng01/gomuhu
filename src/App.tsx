@@ -34,6 +34,7 @@ export default function App() {
   const boardRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const elimQueueRef = useRef<{ row: number; col: number; player: Player }[]>([]);
+  const swapQueueRef = useRef<{ row1: number; col1: number; row2: number; col2: number; p1: Player; p2: Player }[]>([]);
 
   // Attach and sync flame canvas whenever board is present
   useEffect(() => {
@@ -50,19 +51,39 @@ export default function App() {
     return () => window.removeEventListener('resize', sync);
   }, []);
 
-  // Flush elimination positions → flame effects
+  function cellCenter(row: number, col: number) {
+    if (!boardRef.current) return { cx: 0, cy: 0 };
+    const rect = boardRef.current.getBoundingClientRect();
+    const cs = getComputedStyle(boardRef.current);
+    const pad = parseFloat(cs.paddingLeft) || 12;
+    const border = parseFloat(cs.borderLeftWidth) || 0;
+    const cellSize = (rect.width - border * 2 - pad * 2) / 15;
+    return {
+      cx: border + pad + col * cellSize + cellSize / 2,
+      cy: border + pad + row * cellSize + cellSize / 2,
+    };
+  }
+
+  // Flush elimination positions → explosion effects
   useEffect(() => {
     const q = elimQueueRef.current;
     if (q.length === 0 || !boardRef.current) return;
     elimQueueRef.current = [];
-    const rect = boardRef.current.getBoundingClientRect();
-    const cs = getComputedStyle(boardRef.current);
-    const pad = parseFloat(cs.paddingLeft) || 12;
-    const cellSize = (rect.width - pad * 2) / 15;
     for (const pos of q) {
-      const cx = pad + pos.col * cellSize + cellSize / 2;
-      const cy = pad + pos.row * cellSize + cellSize / 2;
+      const { cx, cy } = cellCenter(pos.row, pos.col);
       flameCanvas.emit(cx, cy, pos.player);
+    }
+  });
+
+  // Flush swap positions → swap animation
+  useEffect(() => {
+    const q = swapQueueRef.current;
+    if (q.length === 0 || !boardRef.current) return;
+    swapQueueRef.current = [];
+    for (const s of q) {
+      const p1 = cellCenter(s.row1, s.col1);
+      const p2 = cellCenter(s.row2, s.col2);
+      flameCanvas.animateSwap(p1.cx, p1.cy, p2.cx, p2.cy, s.p1, s.p2);
     }
   });
 
@@ -85,6 +106,9 @@ export default function App() {
         return nextTurn(s);
       }
       case 'skill_swap': {
+        const sp1 = state.board[action.pos1.row][action.pos1.col] as Player;
+        const sp2 = state.board[action.pos2.row][action.pos2.col] as Player;
+        swapQueueRef.current.push({ row1: action.pos1.row, col1: action.pos1.col, row2: action.pos2.row, col2: action.pos2.col, p1: sp1, p2: sp2 });
         let s = testModeRef.current ? state : deductMP(state, 3);
         s = swapPieces(s, action.pos1, action.pos2);
         if (s.phase === 'five_choice') return s;
@@ -284,6 +308,9 @@ export default function App() {
           if (prev.targetingStep === 0) {
             return { ...prev, targetingStep: 1, targetingFirst: { row, col } };
           }
+          const p1 = prev.board[prev.targetingFirst!.row][prev.targetingFirst!.col] as Player;
+          const p2 = prev.board[row][col] as Player;
+          swapQueueRef.current.push({ row1: prev.targetingFirst!.row, col1: prev.targetingFirst!.col, row2: row, col2: col, p1, p2 });
           let s = testModeRef.current ? prev : deductMP(prev, 3);
           s = swapPieces(s, prev.targetingFirst!, { row, col });
           if (prev.mode === 'online') {
