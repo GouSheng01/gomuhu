@@ -3,7 +3,7 @@ import type { SkillId, GameMode, PeerAction, OnlinePhase, Player, Position } fro
 import { SKILLS, PLAYER_NAMES, TURN_TIME } from './constants';
 import {
   createInitialState, opponentOf, placePiece, chooseScore, chooseMP,
-  eliminatePiece, swapPieces, breedPieces, deductMP, nextTurn, tickGameTime,
+  eliminatePiece, swapPieces, breedPieces, placeBomb, deductMP, nextTurn, tickGameTime,
 } from './gameLogic';
 import { aiDecide } from './aiService';
 import { createRoom, joinRoom, sendAction, onRemoteAction, onStatusChange, disconnect } from './peerService';
@@ -145,6 +145,15 @@ export default function App() {
         let s = testModeRef.current ? state : deductMP(state, 5);
         breedQueueRef.current.push({ seedRow: action.seed.row, seedCol: action.seed.col, spawns: action.spawns, player: state.currentPlayer });
         const r = breedPieces(s, action.seed, action.spawns);
+        if (r.state.phase === 'five_choice') return r.state;
+        return nextTurn(r.state);
+      }
+      case 'skill_bombard': {
+        let s = testModeRef.current ? state : deductMP(state, 4);
+        const r = placeBomb(s, { row: action.row, col: action.col });
+        for (let i = 0; i < r.eliminated.length; i++) {
+          elimQueueRef.current.push({ row: r.eliminated[i].row, col: r.eliminated[i].col, player: r.eliminatedPlayers[i] });
+        }
         if (r.state.phase === 'five_choice') return r.state;
         return nextTurn(r.state);
       }
@@ -385,6 +394,20 @@ export default function App() {
           return r.state.phase === 'five_choice' ? r.state : nextTurn(r.state);
         }
 
+        // --- Bombard ---
+        if (prev.targetingSkill === 'bombard') {
+          if (prev.board[row][col] !== 'empty') return prev;
+          let s = testModeRef.current ? prev : deductMP(prev, 4);
+          const { state: newState, eliminated, eliminatedPlayers } = placeBomb(s, { row, col });
+          for (let i = 0; i < eliminated.length; i++) {
+            elimQueueRef.current.push({ row: eliminated[i].row, col: eliminated[i].col, player: eliminatedPlayers[i] });
+          }
+          if (prev.mode === 'online') {
+            sendRef.current = { type: 'skill_bombard', row, col, eliminated };
+          }
+          return newState.phase === 'five_choice' ? newState : nextTurn(newState);
+        }
+
         return prev;
       }
 
@@ -432,6 +455,8 @@ export default function App() {
           return { ...prev, phase: 'skill_targeting', targetingSkill: 'swap', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
         case 'breed':
           return { ...prev, phase: 'skill_targeting', targetingSkill: 'breed', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
+        case 'bombard':
+          return { ...prev, phase: 'skill_targeting', targetingSkill: 'bombard', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
         default:
           return prev;
       }
@@ -471,6 +496,7 @@ export default function App() {
       if (targetingSkill === 'eliminate' && board[r][c] === opponentOf(currentPlayer)) return 'targetable';
       if (targetingSkill === 'swap' && board[r][c] !== 'empty') return 'targetable';
       if (targetingSkill === 'breed' && board[r][c] === currentPlayer) return 'targetable';
+      if (targetingSkill === 'bombard' && board[r][c] === 'empty') return 'targetable';
     }
     return '';
   };
@@ -483,6 +509,7 @@ export default function App() {
       if (targetingSkill === 'eliminate') return `剔除: 点击敌方棋子 (${eliminatedCount}/2)`;
       if (targetingSkill === 'swap') return `交换: 选第${targetingStep === 0 ? '一' : '二'}颗棋子`;
       if (targetingSkill === 'breed') return '繁殖: 点击己方棋子作为种子';
+      if (targetingSkill === 'bombard') return '轰炸: 点击空格落子，炸毁相邻所有棋子';
     }
     return `当前回合: ${PLAYER_NAMES[currentPlayer]}${isAI ? ' (AI思考中...)' : ''}`;
   };

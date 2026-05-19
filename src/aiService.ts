@@ -1,7 +1,7 @@
 import type { GameState, Player, Position, SkillId } from './types';
 import { BOARD_SIZE, WIN_LENGTH, BREED_RANGE } from './constants';
 import {
-  placePiece, chooseScore, chooseMP, eliminatePiece, swapPieces, breedPieces, deductMP, nextTurn,
+  placePiece, chooseScore, chooseMP, eliminatePiece, swapPieces, breedPieces, placeBomb, deductMP, nextTurn,
   opponentOf, checkWin,
 } from './gameLogic';
 import type { CellState } from './types';
@@ -133,6 +133,29 @@ function findBreedSeed(board: CellState[][], ai: Player): Position | null {
   return candidates[0].pos;
 }
 
+/** Find best bomb cell: empty cell with most adjacent enemy pieces. */
+function findBombCell(board: CellState[][], ai: Player): Position | null {
+  const opp = opponentOf(ai);
+  let best: Position | null = null;
+  let bestCount = 0;
+  const dirs: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (let r = 0; r < BOARD_SIZE; r++) {
+    for (let c = 0; c < BOARD_SIZE; c++) {
+      if (board[r][c] !== 'empty') continue;
+      let count = 0;
+      for (const [dr, dc] of dirs) {
+        const nr = r + dr, nc = c + dc;
+        if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === opp) count++;
+      }
+      // Also value cells on good offensive lines
+      const offenseBonus = cellScore(board, r, c, ai) >= 3 ? 2 : 0;
+      const total = count + offenseBonus;
+      if (total > bestCount) { bestCount = total; best = { row: r, col: c }; }
+    }
+  }
+  return best;
+}
+
 /** Find swap positions: AI's worst piece swapped with opponent's best. */
 function findSwapPositions(board: CellState[][], ai: Player): { pos1: Position; pos2: Position } | null {
   const opp = opponentOf(ai);
@@ -210,6 +233,12 @@ function shouldUseSkill(state: GameState, ai: Player): SkillId | null {
   if (mp >= 5 && oppCount > 4 && Math.random() < 0.4) {
     log('using eliminate aggressively');
     return 'eliminate';
+  }
+
+  // === Priority 5: 轰炸 (4MP) — aggressive when opp pieces are clustered ===
+  if (mp >= 4 && oppCount > 6 && Math.random() < 0.45) {
+    log('using bombard');
+    return 'bombard';
   }
 
   // === Fallback: 交换 as cheap option when nothing else fires ===
@@ -321,6 +350,19 @@ export function aiDecide(state: GameState): GameState {
       return nextTurn(state);
     }
 
+    // --- Bombard (1-step: pick empty cell, bomb adjacent) ---
+    if (state.targetingSkill === 'bombard') {
+      const move = findBombCell(state.board, ai);
+      if (move) {
+        log(`bombard at ${move.row},${move.col}`);
+        let s = deductMP(state, 4);
+        const r = placeBomb(s, move);
+        return r.state.phase === 'five_choice' ? r.state : nextTurn(r.state);
+      }
+      log('bombard: no good target, cancelling');
+      return nextTurn(state);
+    }
+
     log('targeting fallback');
     return nextTurn(state);
   }
@@ -336,6 +378,9 @@ export function aiDecide(state: GameState): GameState {
   }
   if (skillChoice === 'eliminate') {
     return { ...state, phase: 'skill_targeting', targetingSkill: 'eliminate', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
+  }
+  if (skillChoice === 'bombard') {
+    return { ...state, phase: 'skill_targeting', targetingSkill: 'bombard', targetingStep: 0, targetingFirst: null, eliminatedCount: 0 };
   }
 
   // Place a piece

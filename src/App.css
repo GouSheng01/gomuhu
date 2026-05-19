@@ -386,11 +386,17 @@
   z-index: 3;
 }
 
+.skill-card.bombard {
+  background-color: #FF6D00;
+  transform: rotate(2.5deg) translateY(2px);
+  z-index: 4;
+}
+
 .skill-card.cancel {
   background-color: #1a1a1a;
   color: #FF5252;
   transform: rotate(0.5deg) translateY(1px);
-  z-index: 4;
+  z-index: 5;
 }
 
 /* ===== Card innards — rank-style corners ===== */

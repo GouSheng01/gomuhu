@@ -12,6 +12,7 @@ export const SKILLS: SkillDef[] = [
   { id: 'eliminate', name: '剔除', description: '剔除场上的一枚棋子',                   mpCost: 4 },
   { id: 'swap',      name: '交换', description: '交换棋盘任意两颗棋子',               mpCost: 3 },
   { id: 'breed',     name: '繁殖', description: '选己方棋子，3×3范围生成2颗己方棋子', mpCost: 5 },
+  { id: 'bombard',   name: '轰炸', description: '落子时炸毁相邻四格所有棋子',             mpCost: 4 },
 ];
 
 export const BREED_RANGE = 3; // 3×3 range for breed skill

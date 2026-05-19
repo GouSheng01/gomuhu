@@ -276,6 +276,63 @@ export function breedPieces(
   };
 }
 
+/** Bombard skill: place piece, destroy all adjacent pieces (enemy + friendly). */
+export function placeBomb(
+  state: GameState,
+  pos: Position,
+): { state: GameState; eliminated: Position[]; eliminatedPlayers: ('black' | 'white')[] } {
+  const board = state.board.map(r => [...r]);
+  const player = state.currentPlayer;
+
+  board[pos.row][pos.col] = player;
+
+  const eliminated: Position[] = [];
+  const eliminatedPlayers: ('black' | 'white')[] = [];
+  const dirs: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  for (const [dr, dc] of dirs) {
+    const r = pos.row + dr;
+    const c = pos.col + dc;
+    if (r >= 0 && r < BOARD_SIZE && c >= 0 && c < BOARD_SIZE && board[r][c] !== 'empty') {
+      eliminatedPlayers.push(board[r][c] as 'black' | 'white');
+      board[r][c] = 'empty';
+      eliminated.push({ row: r, col: c });
+    }
+  }
+
+  // Count fallen per player
+  const fallenByPlayer: Record<string, number> = { black: 0, white: 0 };
+  for (const ep of eliminatedPlayers) fallenByPlayer[ep]++;
+
+  const newPlayers = {
+    ...state.players,
+    black: {
+      ...state.players.black,
+      fallen: state.players.black.fallen + (fallenByPlayer.black || 0),
+    },
+    white: {
+      ...state.players.white,
+      fallen: state.players.white.fallen + (fallenByPlayer.white || 0),
+    },
+  };
+
+  const fives = scanBoardForAllWins(board, player);
+
+  return {
+    state: {
+      ...state,
+      board,
+      players: newPlayers,
+      fivePositions: fives,
+      phase: fives.length > 0 ? 'five_choice' : 'playing',
+      targetingSkill: null,
+      targetingStep: 0,
+      targetingFirst: null,
+    },
+    eliminated,
+    eliminatedPlayers,
+  };
+}
+
 /** Deduct MP for using a skill. */
 export function deductMP(state: GameState, cost: number): GameState {
   return {
