@@ -1,5 +1,5 @@
 import type { CellState, GameState, Player, Position, GameMode } from './types';
-import { BOARD_SIZE, WIN_LENGTH, SCORE_PER_WIN, MP_PER_WIN, WIN_LEAD, TURN_TIME, GAME_TIME, BREED_RANGE, PLAYER_NAMES } from './constants';
+import { BOARD_SIZE, WIN_LENGTH, SCORE_PER_WIN, MP_PER_WIN, TURN_TIME, GAME_TIME, BREED_RANGE, PLAYER_NAMES } from './constants';
 
 export function createEmptyBoard(): CellState[][] {
   return Array.from({ length: BOARD_SIZE }, () =>
@@ -60,7 +60,7 @@ export function checkWin(board: CellState[][], row: number, col: number): Positi
     }
 
     if (line.length >= WIN_LENGTH) {
-      results.push(line.slice(0, WIN_LENGTH));
+      results.push(line);
     }
   }
   return results;
@@ -105,71 +105,69 @@ export function placePiece(state: GameState, row: number, col: number): { state:
   };
 }
 
-/** Player chooses to take score (1 per 5-in-a-row).
- *  Opponent gains MP = floor(opponent piece count on board / 2). */
-export function chooseScore(state: GameState): GameState {
-  const multiplier = state.fivePositions.length;
-  const player = state.currentPlayer;
-  const opp = opponentOf(player);
-
-  let oppBoardCount = 0;
-  for (let r = 0; r < BOARD_SIZE; r++) {
-    for (let c = 0; c < BOARD_SIZE; c++) {
-      if (state.board[r][c] === opp) oppBoardCount++;
+/** Count unique positions across all win lines. */
+function countUniquePositions(lines: Position[][]): number {
+  const seen = new Set<string>();
+  for (const line of lines) {
+    for (const pos of line) {
+      seen.add(`${pos.row},${pos.col}`);
     }
   }
-  const oppMPGain = Math.floor(oppBoardCount / 2);
-
-  const newScore = state.players[player].score + SCORE_PER_WIN * multiplier;
-  const oppScore = state.players[opp].score;
-  const won = newScore - oppScore >= WIN_LEAD;
-
-  const players = {
-    ...state.players,
-    [player]: { ...state.players[player], score: newScore },
-    [opp]:   { ...state.players[opp], mp: state.players[opp].mp + oppMPGain },
-  };
-
-  return {
-    ...state,
-    board: won ? state.board : createEmptyBoard(),
-    players,
-    currentPlayer: won ? player : opp,
-    phase: won ? 'game_over' : 'playing',
-    fivePositions: [],
-    winner: won ? player : null,
-    turnTimeRemaining: TURN_TIME,
-  };
+  return seen.size;
 }
 
-/** Player chooses to take MP (3 per 5-in-a-row, remove all win-line pieces, continue). */
-export function chooseMP(state: GameState): GameState {
-  const multiplier = state.fivePositions.length;
-  const player = state.currentPlayer;
-  const players = {
-    ...state.players,
-    [player]: {
-      ...state.players[player],
-      mp: state.players[player].mp + MP_PER_WIN * multiplier,
-    },
-  };
-
-  const board = state.board.map(r => [...r]);
+/** Remove all pieces involved in win lines from the board. */
+function removeWinPieces(board: CellState[][], lines: Position[][]): CellState[][] {
+  const newBoard = board.map(r => [...r]);
   const seen = new Set<string>();
-  for (const line of state.fivePositions) {
+  for (const line of lines) {
     for (const { row, col } of line) {
       const key = `${row},${col}`;
       if (!seen.has(key)) {
         seen.add(key);
-        board[row][col] = 'empty';
+        newBoard[row][col] = 'empty';
       }
     }
   }
+  return newBoard;
+}
+
+/** Player chooses to take score. Multiplier = (unique win positions - 4). */
+export function chooseScore(state: GameState): GameState {
+  const player = state.currentPlayer;
+  const n = countUniquePositions(state.fivePositions);
+  const multiplier = n - 4;
 
   return {
     ...state,
-    board,
-    players,
+    board: removeWinPieces(state.board, state.fivePositions),
+    players: {
+      ...state.players,
+      [player]: { ...state.players[player], score: state.players[player].score + SCORE_PER_WIN * multiplier },
+    },
+    currentPlayer: opponentOf(player),
+    phase: 'playing',
+    fivePositions: [],
+    turnTimeRemaining: TURN_TIME,
+  };
+}
+
+/** Player chooses to take MP. Multiplier = (unique win positions - 4). */
+export function chooseMP(state: GameState): GameState {
+  const player = state.currentPlayer;
+  const n = countUniquePositions(state.fivePositions);
+  const multiplier = n - 4;
+
+  return {
+    ...state,
+    board: removeWinPieces(state.board, state.fivePositions),
+    players: {
+      ...state.players,
+      [player]: {
+        ...state.players[player],
+        mp: state.players[player].mp + MP_PER_WIN * multiplier,
+      },
+    },
     currentPlayer: opponentOf(player),
     phase: 'playing',
     fivePositions: [],

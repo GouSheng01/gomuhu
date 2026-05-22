@@ -716,23 +716,26 @@ export default function App() {
       </div>
 
       {phase === 'five_choice' && localTurn && !isAI && (() => {
-        const multi = fivePositions.length;
-        const opp = opponentOf(currentPlayer);
-        let oppBoardCount = 0;
-        for (let r = 0; r < 15; r++) for (let c = 0; c < 15; c++) if (board[r][c] === opp) oppBoardCount++;
-        const oppMP = Math.floor(oppBoardCount / 2);
+        const numLines = fivePositions.length;
+        const seen = new Set<string>();
+        for (const line of fivePositions) {
+          for (const { row, col } of line) seen.add(`${row},${col}`);
+        }
+        const n = seen.size;
+        const multi = n - 4;
+        const lenLabel = numLines === 1 && n > 5 ? `${n}连` : numLines > 1 ? `${numLines} 条连线 · ${n} 子` : '';
         return (
         <div className="modal-overlay">
           <div className="modal">
-            <h2>{PLAYER_NAMES[currentPlayer]} 形成五连！{multi > 1 && ` ×${multi}`}</h2>
+            <h2>{PLAYER_NAMES[currentPlayer]} 形成五连！{lenLabel && ` (${lenLabel})`}</h2>
             <p>请选择奖励方式：</p>
             <div className="modal-buttons">
               <button className="modal-btn score" onClick={handleChooseScore}>
                 获得胜利积分 (+{multi})<br />
-                <small>棋盘清空 · {PLAYER_NAMES[opp]}获得 {oppMP} MP（{oppBoardCount}子 ÷ 2）</small>
+                <small>连线棋子消失，继续对局</small>
               </button>
               <button className="modal-btn mp" onClick={handleChooseMP}>
-                获得 MP (+{multi * 3})<br /><small>五连棋子消失，继续对局</small>
+                获得 MP (+{multi * 3})<br /><small>连线棋子消失，继续对局</small>
               </button>
             </div>
           </div>
@@ -746,7 +749,7 @@ export default function App() {
             <h2>游戏结束</h2>
             <p className="result">{winner ? `${PLAYER_NAMES[winner]} 获胜！` : `平局！ (${players.black.score} : ${players.white.score})`}</p>
             {!winner && <p className="result-sub">分数持平，{players.black.mp > players.white.mp ? '黑方' : players.white.mp > players.black.mp ? '白方' : '双方'} MP领先</p>}
-            {winner && <p className="result-sub">{players[winner].score - players[opponentOf(winner)].score >= 3 ? '领先 3 分提前结束' : gameTimeRemaining <= 0 ? '时间结束，比分领先' : ''}</p>}
+            {winner && <p className="result-sub">{gameTimeRemaining <= 0 ? '时间结束，比分领先' : '达成胜利条件'}</p>}
             <div className="final-scores">
               <div>黑方 — 积分: {players.black.score} | MP: {players.black.mp}</div>
               <div>白方 — 积分: {players.white.score} | MP: {players.white.mp}</div>

@@ -4,7 +4,6 @@ export const BOARD_SIZE = 15;
 export const WIN_LENGTH = 5;
 export const TURN_TIME = 120;   // 2 minutes per turn
 export const GAME_TIME = 600;   // 10 minutes total game time
-export const WIN_LEAD = 3;      // win by leading 3 points
 export const SCORE_PER_WIN = 1;
 export const MP_PER_WIN = 3;
 
